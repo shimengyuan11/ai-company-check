@@ -50,3 +50,46 @@ cd ai-company-check
 python -m venv .venv
 .venv\Scripts\activate        # Windows；macOS/Linux 用 source .venv/bin/activate
 pip install -r requirements.txt
+```
+
+在 `ai-company-check` 文件夹里（和 `main.py` 同一层）新建 `.env`（**不要提交到 git**）：
+
+```
+LLM_BASE_URL=https://api.deepseek.com
+LLM_API_KEY=你的key
+LLM_MODEL=deepseek-flash
+```
+
+启动：
+
+```bash
+uvicorn main:app --reload
+```
+
+打开 http://127.0.0.1:8000
+
+## 项目结构
+
+```
+main.py            FastAPI 应用与路由（/、/analyze、/history）
+llm.py             调 LLM：提示词 + 请求
+db.py              数据库操作：建表 / 存 / 读
+static/            前端三件套（页面、样式、逻辑）
+PRD.md             需求与边界（含「不做什么」及原因）
+```
+
+## 接口
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/` | 前端页面 |
+| POST | `/analyze` | 生成一份背调并存库 |
+| GET | `/history` | 历史记录列表 |
+| GET | `/history/{id}` | 单条详情 |
+| GET | `/docs` | 自动生成的交互式接口文档 |
+
+## 已知限制
+
+- **免费实例闲置 15 分钟休眠**，下次访问约需 1 分钟唤醒
+- **服务器磁盘是临时的**：重新部署或休眠后历史记录会清空（生产环境应改用 Postgres 等持久化数据库）
+- 分析质量取决于所选模型，且**所有结论都需要人工核实**
