@@ -1,0 +1,19 @@
+* { box-sizing: border-box; }
+body { margin: 0; font-family: "Microsoft YaHei", system-ui, sans-serif;
+       background: #f5f6f8; color: #222; line-height: 1.6; }
+.wrap { max-width: 760px; margin: 0 auto; padding: 24px 16px 60px; }
+h1 { font-size: 22px; margin: 0 0 6px; }
+h2 { font-size: 16px; margin: 0 0 10px; color: #444; }
+.hint { color: #666; font-size: 13px; margin: 0 0 18px; }
+.card { background: #fff; border: 1px solid #e3e5e8; border-radius: 10px;
+        padding: 16px; margin-bottom: 16px; }
+input { width: 100%; padding: 10px 12px; margin-bottom: 10px;
+        border: 1px solid #d5d8dc; border-radius: 8px; font-size: 14px; }
+button { padding: 10px 20px; border: 0; border-radius: 8px;
+         background: #2563eb; color: #fff; font-size: 14px; cursor: pointer; }
+button:disabled { background: #9db4e8; cursor: not-allowed; }
+.status { margin: 10px 0 0; font-size: 13px; color: #2563eb; min-height: 18px; }
+pre { white-space: pre-wrap; word-break: break-word; background: #fafbfc;
+      border: 1px solid #eef0f2; border-radius: 8px; padding: 12px; margin: 0;
+      font-size: 13px; font-family: inherit; }
+ul { margin: 0; padding-left: 18px; font-size: 13px; }

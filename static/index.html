@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>AI 公司背调系统</title>
+  <link rel="stylesheet" href="/static/style.css">
+    </head>
+    <body>
+        <main class="wrap">
+            <h1>AI 公司背调系统</h1>
+            <p class="hint">输入公司名，生成一份背调分析。AI 生成，仅供线索参考，重要决策请人工核实。</p>
+
+    <section class="card">
+      <input id="company" type="text" placeholder="公司名，例如：比亚迪" autocomplete="off">
+      <input id="extra" type="text" placeholder="补充信息（选填）：国家 / 行业 / 官网" autocomplete="off">
+      <button id="go">开始背调</button>
+      <p id="status" class="status"></p>
+    </section>
+    <section class="card">
+      <h2>本次结果</h2>
+      <pre id="result">（还没开始）</pre>
+    </section>
+
+    <section class="card">
+      <h2>历史记录</h2>
+      <ul id="history"></ul>
+    </section>
+        </main>
+        <script src="/static/app.js"></script>
+    </body>
+</html>
