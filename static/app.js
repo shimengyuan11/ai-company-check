@@ -10,6 +10,20 @@ function setStatus(text) {
   statusEl.textContent = text;
 }
 
+// 把 HTML 特殊字符转义成实体，防止外部文本被当成标签执行
+function escapeHtml(text) {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+// 把 LLM 返回的纯文本渲染成 HTML：先转义，再把 **xxx** 换成 <strong>。
+// 顺序不能反——先替换粗体的话，外部文本里的 <script> 就会被当成真标签（XSS）。
+function renderMarkdown(text) {
+  return escapeHtml(text).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+}
+
 // 读历史列表，渲染成 <li>
 async function loadHistory() {
   try {
@@ -61,7 +75,7 @@ async function analyze() {
       resultEl.textContent = JSON.stringify(data, null, 2);
     } else {
       setStatus("完成，已存为第 " + data.id + " 条");
-      resultEl.textContent = data.analysis;
+      resultEl.innerHTML = renderMarkdown(data.analysis);
       loadHistory();
     }
   } catch (err) {
