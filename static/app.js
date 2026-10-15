@@ -4,6 +4,7 @@ const extraInput = document.getElementById("extra");
 const goButton = document.getElementById("go");
 const statusEl = document.getElementById("status");
 const resultEl = document.getElementById("result");
+const resultTitleEl = document.getElementById("resultTitle");
 const historyEl = document.getElementById("history");
 
 function setStatus(text) {
@@ -39,6 +40,9 @@ async function loadHistory() {
     for (const item of data.items) {
       const li = document.createElement("li");
       li.textContent = item.company + " —— " + item.created_at;
+      li.className = "history-item";
+      li.title = "点击查看这条详情";
+      li.addEventListener("click", () => showDetail(item.id));
       historyEl.appendChild(li);
     }
   } catch (err) {
@@ -46,6 +50,24 @@ async function loadHistory() {
     const li = document.createElement("li");
     li.textContent = "历史加载失败：" + err.message;
     historyEl.appendChild(li);
+  }
+}
+
+// 点历史某条：取回该条完整正文，显示在结果区
+async function showDetail(id) {
+  setStatus("正在读取历史记录 #" + id + "…");
+  try {
+    const res = await fetch("/history/" + id);
+    const data = await res.json();
+    if (data.error) {
+      setStatus("出错了：" + data.error);
+      return;
+    }
+    resultTitleEl.textContent = "历史记录 #" + data.id;
+    resultEl.innerHTML = renderMarkdown(data.analysis);
+    setStatus("已加载历史记录 #" + data.id + "：" + data.company);
+  } catch (err) {
+    setStatus("读取失败：" + err.message);
   }
 }
 
@@ -75,6 +97,7 @@ async function analyze() {
       resultEl.textContent = JSON.stringify(data, null, 2);
     } else {
       setStatus("完成，已存为第 " + data.id + " 条");
+      resultTitleEl.textContent = "本次结果";
       resultEl.innerHTML = renderMarkdown(data.analysis);
       loadHistory();
     }

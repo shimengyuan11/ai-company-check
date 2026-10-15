@@ -17,3 +17,5 @@ pre { white-space: pre-wrap; word-break: break-word; background: #fafbfc;
       border: 1px solid #eef0f2; border-radius: 8px; padding: 12px; margin: 0;
       font-size: 13px; font-family: inherit; }
 ul { margin: 0; padding-left: 18px; font-size: 13px; }
+.history-item { cursor: pointer; padding: 2px 0; }
+.history-item:hover { color: #2563eb; }
