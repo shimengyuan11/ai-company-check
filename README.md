@@ -15,7 +15,7 @@
 
 - 输入公司名（+ 可选的补充信息：国家 / 行业 / 官网）
 - 后端调用 LLM 生成五段式背调：**公司概况 / 主营 / 规模 / 风险点 / 建议**
-- 结果存进 SQLite，页面可查看历史记录
+- 结果存进 Postgres，页面可查看历史记录（点历史某条展开该条详情）
 
 ## 一条重要的产品决策：宁可说"不知道"，也不编
 
@@ -37,7 +37,7 @@ LLM 对公司不熟悉时会**自信地编造**具体数字（员工数、营收
 | 层 | 用什么 |
 |---|---|
 | 后端 | Python + FastAPI |
-| 数据库 | SQLite（Python 自带 `sqlite3`，零额外依赖） |
+| 数据库 | Postgres（托管，如 Neon 免费层；驱动 `psycopg`） |
 | LLM | 任何 OpenAI 兼容接口（默认 DeepSeek） |
 | 前端 | 原生 HTML / CSS / JavaScript |
 | 部署 | Render |
@@ -58,7 +58,10 @@ pip install -r requirements.txt
 LLM_BASE_URL=https://api.deepseek.com
 LLM_API_KEY=你的key
 LLM_MODEL=deepseek-flash
+DATABASE_URL=postgresql://用户名:密码@主机/库名?sslmode=require
 ```
+
+`DATABASE_URL` 是 Postgres 连接串——去 https://neon.com 建一个免费库就能拿到（形如上行的串，末尾的 `sslmode=require` 别丢）。本地和线上用的是同一个库。
 
 启动：
 
@@ -73,7 +76,7 @@ uvicorn main:app --reload
 ```
 main.py            FastAPI 应用与路由（/、/analyze、/history）
 llm.py             调 LLM：提示词 + 请求
-db.py              数据库操作：建表 / 存 / 读
+db.py              数据库操作：建表 / 存 / 读（Postgres）
 static/            前端三件套（页面、样式、逻辑）
 PRD.md             需求与边界（含「不做什么」及原因）
 ```
@@ -91,5 +94,5 @@ PRD.md             需求与边界（含「不做什么」及原因）
 ## 已知限制
 
 - **免费实例闲置 15 分钟休眠**，下次访问约需 1 分钟唤醒
-- **服务器磁盘是临时的**：重新部署或休眠后历史记录会清空（生产环境应改用 Postgres 等持久化数据库）
+- 历史记录存在**托管的 Postgres** 里，重新部署/休眠都不会丢；代价是多了一个外部依赖（Neon 免费层，超过免费额度会暂停）
 - 分析质量取决于所选模型，且**所有结论都需要人工核实**
