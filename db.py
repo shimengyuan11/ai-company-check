@@ -1,16 +1,17 @@
-"""数据库相关的全部操作都放这里：建表、存一条背调、读历史列表。
+"""数据库相关的全部操作都放这里：建表、存、读。
 
 用 Postgres，连接串从环境变量 DATABASE_URL 读（本地放 .env，线上放平台环境变量）。
 数据存在托管库里，重新部署、休眠都不会再丢。
 
-换成远程库之后暴露出来的两条经验（都写在这里，免得以后忘）：
+两条踩出来的经验（换远程库之后才暴露的）：
 1. 时间戳一律存 UTC。以前用 datetime.now() 存的是「跑代码那台机器的本地时间」，
-   本机（UTC+8）和 Render（UTC）写进同一张表就差 8 小时。转成本地时间是前端的事。
+   本机（UTC+8）和 Render（UTC）写进同一张表就差 8 小时。转本地时间是前端的事。
 2. 连接要复用。连一次远程库要 ~2 秒（TLS 握手 + 认证），每个请求都新建连接会让页面
-   每次加载卡 2~3 秒。改用连接池：进程里常备几条连接，用完还回去。
+   每次加载卡 2~3 秒。所以用连接池。
 
-从 SQLite 迁过来的三处差异：
-占位符 `?`→`%s`、自增 `AUTOINCREMENT`→`SERIAL`、取新 id `lastrowid`→`RETURNING id`
+【权限的做法】V2 的客户是「各管各的」——所以**权限过滤写在 SQL 里**，不写在路由里。
+   取客户一律走 get_customer(customer_id, viewer)，它在 WHERE 里就带上了归属条件。
+   好处：想「忘了加权限」都很难，因为这里根本没有一个「不带 viewer 的取客户函数」。
 """
 import atexit
 import os
@@ -42,9 +43,15 @@ pool = ConnectionPool(
 atexit.register(pool.close)  # 进程退出时正常收掉连接池，避免关停时报错噪音
 
 
+def _now():
+    """统一的时间戳：UTC + 带时区后缀，谁也歧义不了。"""
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
 def init_db():
-    """建表。IF NOT EXISTS 表示：表已经存在就什么都不做（所以可以重复调用）。"""
+    """建表。IF NOT EXISTS：表已存在就什么都不做（所以可以重复调用）。"""
     with pool.connection() as conn:
+        # —— V1：一次背调 = 一行 ——
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS analyses (
@@ -58,21 +65,64 @@ def init_db():
             """
         )
 
+        # —— V2：用户 / 客户 / 跟进 ——
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id            SERIAL PRIMARY KEY,
+                username      TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                display_name  TEXT,
+                is_admin      BOOLEAN NOT NULL DEFAULT FALSE,
+                is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at    TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS customers (
+                id          SERIAL PRIMARY KEY,
+                owner_id    INTEGER NOT NULL REFERENCES users(id),
+                company     TEXT NOT NULL,
+                source      TEXT,
+                note        TEXT,
+                country     TEXT,
+                stage       TEXT,
+                high_intent BOOLEAN NOT NULL DEFAULT FALSE,
+                created_at  TEXT,
+                updated_at  TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS followups (
+                id          SERIAL PRIMARY KEY,
+                customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+                user_id     INTEGER NOT NULL REFERENCES users(id),
+                content     TEXT NOT NULL,
+                kind        TEXT DEFAULT '跟进',
+                created_at  TEXT
+            )
+            """
+        )
+        # 这两条是最常用的查询条件，给它们建索引
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_customers_owner ON customers(owner_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_followups_customer ON followups(customer_id)")
+
+
+# ===================== V1：背调 =====================
+
 
 def save_analysis(company, extra, analysis, model):
-    """存一条背调，返回它的 id。created_at 存 UTC（前端负责转本地时间显示）。"""
+    """存一条背调，返回它的 id。"""
     with pool.connection() as conn:
         row = conn.execute(
             "INSERT INTO analyses (company, extra, analysis, model, created_at)"
             " VALUES (%s, %s, %s, %s, %s)"
             " RETURNING id",
-            (
-                company,
-                extra,
-                analysis,
-                model,
-                datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            ),
+            (company, extra, analysis, model, _now()),
         ).fetchone()
     return row["id"]
 
@@ -94,3 +144,144 @@ def get_analysis(record_id):
             "SELECT * FROM analyses WHERE id = %s", (record_id,)
         ).fetchone()
     return row
+
+
+# ===================== V2：用户 =====================
+
+
+def count_users():
+    with pool.connection() as conn:
+        return conn.execute("SELECT count(*) AS n FROM users").fetchone()["n"]
+
+
+def create_user(username, password_hash, display_name="", is_admin=False):
+    with pool.connection() as conn:
+        row = conn.execute(
+            "INSERT INTO users (username, password_hash, display_name, is_admin, created_at)"
+            " VALUES (%s, %s, %s, %s, %s) RETURNING id",
+            (username, password_hash, display_name or username, is_admin, _now()),
+        ).fetchone()
+    return row["id"]
+
+
+def get_user_by_username(username):
+    with pool.connection() as conn:
+        return conn.execute(
+            "SELECT * FROM users WHERE username = %s", (username,)
+        ).fetchone()
+
+
+def get_user(user_id):
+    with pool.connection() as conn:
+        return conn.execute("SELECT * FROM users WHERE id = %s", (user_id,)).fetchone()
+
+
+def list_users():
+    """给「移交客户」的下拉用——只取 id 和名字，绝不把 password_hash 带出去。"""
+    with pool.connection() as conn:
+        return conn.execute(
+            "SELECT id, username, display_name, is_active FROM users ORDER BY id"
+        ).fetchall()
+
+
+# ===================== V2：客户 =====================
+
+
+def create_customer(owner_id, company, source="", note=""):
+    """建档。只有 company 必填——这就是「建档 ≤30 秒」的来源。"""
+    with pool.connection() as conn:
+        row = conn.execute(
+            "INSERT INTO customers (owner_id, company, source, note, created_at, updated_at)"
+            " VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+            (owner_id, company, source, note, _now(), _now()),
+        ).fetchone()
+    return row["id"]
+
+
+def list_customers(owner_id, is_admin=False):
+    """客户列表。普通人只看自己的；管理员看全部。
+
+    每条带上「有多少条跟进」，列表页一眼能看出谁很久没跟了。
+    """
+    with pool.connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT c.*,
+                   (SELECT count(*) FROM followups f WHERE f.customer_id = c.id) AS followup_count
+            FROM customers c
+            WHERE %s OR c.owner_id = %s
+            ORDER BY c.id DESC
+            """,
+            (is_admin, owner_id),
+        ).fetchall()
+    return rows
+
+
+def get_customer(customer_id, viewer_id, is_admin=False):
+    """取一个客户。**权限过滤就在这条 SQL 里**——看不到就返回 None，和「不存在」同等待遇。"""
+    with pool.connection() as conn:
+        return conn.execute(
+            "SELECT * FROM customers WHERE id = %s AND (%s OR owner_id = %s)",
+            (customer_id, is_admin, viewer_id),
+        ).fetchone()
+
+
+def update_customer(customer_id, viewer_id, is_admin=False, **fields):
+    """改客户资料。只允许改白名单里的字段，避免调用方随手拼 SQL。"""
+    allowed = ("company", "source", "note", "country", "stage", "high_intent")
+    sets, values = [], []
+    for key in allowed:
+        if key in fields:
+            sets.append(f"{key} = %s")
+            values.append(fields[key])
+    if not sets:
+        return False
+    sets.append("updated_at = %s")
+    values.append(_now())
+    values += [customer_id, is_admin, viewer_id]
+    with pool.connection() as conn:
+        cur = conn.execute(
+            f"UPDATE customers SET {', '.join(sets)}"
+            " WHERE id = %s AND (%s OR owner_id = %s)",
+            values,
+        )
+        return cur.rowcount > 0
+
+
+def transfer_customer(customer_id, new_owner_id, viewer_id, is_admin=False):
+    """把客户转给另一个业务——「有人离职」时用的就是它。"""
+    with pool.connection() as conn:
+        cur = conn.execute(
+            "UPDATE customers SET owner_id = %s, updated_at = %s"
+            " WHERE id = %s AND (%s OR owner_id = %s)",
+            (new_owner_id, _now(), customer_id, is_admin, viewer_id),
+        )
+        return cur.rowcount > 0
+
+
+# ===================== V2：跟进 =====================
+
+
+def add_followup(customer_id, user_id, content, kind="跟进"):
+    """写一条跟进。只有 content 必填——这就是「写跟进 ≤10 秒」的来源。"""
+    with pool.connection() as conn:
+        row = conn.execute(
+            "INSERT INTO followups (customer_id, user_id, content, kind, created_at)"
+            " VALUES (%s, %s, %s, %s, %s) RETURNING id",
+            (customer_id, user_id, content, kind, _now()),
+        ).fetchone()
+    return row["id"]
+
+
+def list_followups(customer_id):
+    """某个客户的全部跟进，新的在上。带上「谁写的」。"""
+    with pool.connection() as conn:
+        return conn.execute(
+            """
+            SELECT f.*, u.display_name, u.username
+            FROM followups f JOIN users u ON u.id = f.user_id
+            WHERE f.customer_id = %s
+            ORDER BY f.id DESC
+            """,
+            (customer_id,),
+        ).fetchall()
