@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>外贸客户工作台</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main class="wrap">
+  <header class="topbar">
+    <h1>外贸客户工作台</h1>
+    <div class="topbar-right">
+      <a class="hint" href="/">背调工具 ↗</a>
+      <span id="whoami" class="hint"></span>
+      <button id="logout" class="ghost" hidden>退出</button>
+    </div>
+  </header>
+
+  <!-- ============ 未登录 ============ -->
+  <section id="loginCard" class="card" hidden>
+    <h2 id="authTitle">登录</h2>
+    <input id="username" type="text" placeholder="用户名" autocomplete="username">
+    <input id="password" type="password" placeholder="密码" autocomplete="current-password">
+    <input id="code" type="text" placeholder="邀请码（注册时需要）" autocomplete="off" hidden>
+    <button id="submitAuth">登录</button>
+    <p class="hint"><a href="#" id="toggleMode">没有账号？去注册</a></p>
+    <p id="authMsg" class="status"></p>
+  </section>
+
+  <!-- ============ 已登录 ============ -->
+  <section id="app" hidden>
+    <section class="card">
+      <div class="newrow">
+        <input id="newCompany" type="text" placeholder="公司名（必填）">
+        <input id="newSource" type="text" placeholder="来源：FB / 邮件 / 展会…">
+        <input id="newNote" type="text" placeholder="一句话备注">
+        <button id="createCustomer">建档</button>
+      </div>
+      <p id="appMsg" class="status"></p>
+    </section>
+
+    <div class="split">
+      <section class="card list-col">
+        <h2>我的客户 <span id="custCount" class="hint"></span></h2>
+        <ul id="custList" class="cust-list"></ul>
+      </section>
+
+      <section class="card detail-col">
+        <p id="detailEmpty" class="hint">← 左边点一个客户</p>
+        <div id="detail" hidden>
+          <h2 id="dCompany"></h2>
+          <p id="dMeta" class="hint"></p>
+          <div class="newrow">
+            <input id="fuContent" type="text" placeholder="写一条跟进（回车就存）">
+            <button id="addFollowup">记下</button>
+          </div>
+          <ul id="fuList" class="fu-list"></ul>
+          <hr>
+          <div class="newrow">
+            <select id="transferTo"></select>
+            <button id="doTransfer" class="ghost">把客户转给他</button>
+          </div>
+          <p class="hint">转出去之后，就归对方管了（你这边不再显示）。</p>
+        </div>
+      </section>
+    </div>
+  </section>
+</main>
+<script src="/static/workspace.js"></script>
+</body>
+</html>

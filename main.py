@@ -249,4 +249,10 @@ def index():
     return FileResponse(BASE_DIR / "static" / "index.html")
 
 
+@app.get("/app")
+def workspace():
+    """V2：外贸客户工作台（登录后使用）。"""
+    return FileResponse(BASE_DIR / "static" / "workspace.html")
+
+
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")

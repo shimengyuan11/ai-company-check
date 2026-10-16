@@ -19,3 +19,42 @@ pre { white-space: pre-wrap; word-break: break-word; background: #fafbfc;
 ul { margin: 0; padding-left: 18px; font-size: 13px; }
 .history-item { cursor: pointer; padding: 2px 0; }
 .history-item:hover { color: #2563eb; }
+
+/* ---------- V2：外贸客户工作台 ---------- */
+.topbar { display: flex; align-items: center; justify-content: space-between;
+          margin-bottom: 16px; gap: 12px; flex-wrap: wrap; }
+.topbar h1 { margin: 0; }
+.topbar-right { display: flex; align-items: center; gap: 12px; }
+.topbar-right a { color: #2563eb; text-decoration: none; }
+.topbar-right a:hover { text-decoration: underline; }
+
+button.ghost { background: #fff; color: #2563eb; border: 1px solid #c7d2fe; }
+button.ghost:hover { background: #f0f4ff; }
+
+.newrow { display: flex; gap: 8px; flex-wrap: wrap; }
+.newrow input { flex: 1 1 160px; width: auto; margin-bottom: 0; }
+.newrow select, .newrow button { flex: 0 0 auto; }
+.newrow select { padding: 10px 12px; border: 1px solid #d5d8dc;
+                 border-radius: 8px; font-size: 14px; }
+
+.split { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.list-col { flex: 1 1 280px; }
+.detail-col { flex: 2 1 380px; }
+
+.cust-list { list-style: none; padding: 0; margin: 0; }
+.cust-item { padding: 8px 10px; border: 1px solid #eef0f2; border-radius: 8px;
+             margin-bottom: 6px; cursor: pointer;
+             display: flex; flex-direction: column; gap: 2px; }
+.cust-item:hover { border-color: #c7d2fe; background: #f8faff; }
+.cust-item.active { border-color: #2563eb; background: #f0f4ff; }
+.cust-name { font-size: 14px; font-weight: 600; }
+.cust-meta { font-size: 12px; color: #666; }
+
+.fu-list { list-style: none; padding: 0; margin: 10px 0 0;
+           max-height: 340px; overflow: auto; }
+.fu-item { padding: 6px 0; border-bottom: 1px dashed #eef0f2;
+           display: flex; flex-direction: column; gap: 2px; }
+.fu-time { font-size: 12px; color: #888; }
+.fu-content { font-size: 13px; white-space: pre-wrap; word-break: break-word; }
+
+hr { border: 0; border-top: 1px solid #eef0f2; margin: 14px 0; }
