@@ -75,6 +75,8 @@ function showApp(user) {
   $("logout").hidden = false;
   setText($("whoami"), user.display_name + (user.is_admin ? "（管理员）" : ""));
   $("newName").focus();
+  switchView("customers");
+  loadOptions();
   loadCustomers();
 }
 
@@ -187,6 +189,7 @@ async function createCustomer() {
     setText($("appMsg"), "已建档：" + titleOf(c));
     $("newName").focus();
     await loadCustomers();
+    loadOptions(); // 刚填的国家/来源，下一个人就能下拉选到了
     openCustomer(c.id);
   } catch (err) {
     setText($("appMsg"), err.message);
@@ -213,7 +216,10 @@ async function openCustomer(id) {
     setText($("toggleHot"), c.high_intent ? "取消高意向" : "标记高意向");
     $("fuContent").focus();
     await loadFollowups(id);
+    await loadAttachments(id);
     await loadTransferOptions();
+    setText($("fileMsg"), "");
+    $("fileInput").value = "";
     document.querySelectorAll(".cust-item").forEach((el) => {
       el.classList.toggle("active", Number(el.dataset.id) === id);
     });
@@ -330,6 +336,185 @@ function closeDetail() {
   $("detailEmpty").hidden = false;
 }
 
+// ---------- 选项库：填过一次，以后大家都能下拉选 ----------
+
+function fillDatalist(id, values) {
+  const dl = $(id);
+  dl.innerHTML = "";
+  for (const v of values || []) {
+    const o = document.createElement("option");
+    o.value = v;
+    dl.appendChild(o);
+  }
+}
+
+async function loadOptions() {
+  try {
+    const d = await api("/api/options");
+    fillDatalist("optCountry", d.country);
+    fillDatalist("optSource", d.source);
+  } catch (_) {
+    /* 取不到就不给建议，不影响建档 */
+  }
+}
+
+// ---------- 视图切换（左导航） ----------
+
+function switchView(name) {
+  $("viewCustomers").hidden = name !== "customers";
+  $("viewProducts").hidden = name !== "products";
+  document.querySelectorAll(".nav-item[data-view]").forEach((el) => {
+    el.classList.toggle("active", el.dataset.view === name);
+  });
+  if (name === "products") loadProducts();
+}
+
+// ---------- 附件（PI / 报价单） ----------
+
+function fmtSize(n) {
+  if (n < 1024) return n + " B";
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+  return (n / 1024 / 1024).toFixed(1) + " MB";
+}
+
+async function loadAttachments(id) {
+  const data = await api("/api/customers/" + id + "/attachments");
+  const ul = $("fileList");
+  ul.innerHTML = "";
+  if (!data.items.length) {
+    const li = document.createElement("li");
+    li.className = "hint";
+    li.textContent = "还没有附件。PI / 报价单传上来，以后就不用翻聊天记录找文件了。";
+    ul.appendChild(li);
+    return;
+  }
+  for (const a of data.items) {
+    const li = document.createElement("li");
+    li.className = "file-item";
+    const link = document.createElement("a");
+    link.href = "/api/attachments/" + a.id;
+    link.textContent = a.filename;
+    const size = document.createElement("span");
+    size.className = "file-size";
+    size.textContent = fmtSize(a.size) + " · " + (a.display_name || a.username);
+    const del = document.createElement("button");
+    del.className = "ghost danger";
+    del.textContent = "删";
+    del.style.marginLeft = "auto";
+    del.addEventListener("click", () => deleteAttachment(a.id, a.filename));
+    li.append(link, size, del);
+    ul.appendChild(li);
+  }
+}
+
+async function uploadAttachment() {
+  if (!CURRENT) return;
+  const f = $("fileInput").files[0];
+  if (!f) return setText($("fileMsg"), "先选一个文件");
+  const fd = new FormData();
+  fd.append("file", f);
+  try {
+    // 注意：这里不能走 api()——它会给请求带上 Content-Type: application/json，
+    // 而上传必须让浏览器自己带 multipart 的 boundary，手设会坏。
+    const res = await fetch("/api/customers/" + CURRENT + "/attachments", {
+      method: "POST",
+      body: fd,
+    });
+    if (!res.ok) {
+      const d = await res.json().catch(() => null);
+      throw new Error((d && d.detail) || "上传失败：" + res.status);
+    }
+    $("fileInput").value = "";
+    setText($("fileMsg"), "已上传：" + f.name);
+    await loadAttachments(CURRENT);
+  } catch (err) {
+    setText($("fileMsg"), err.message);
+  }
+}
+
+async function deleteAttachment(attId, name) {
+  if (!confirm("删掉附件「" + name + "」？不能恢复。")) return;
+  try {
+    await api("/api/customers/" + CURRENT + "/attachments/" + attId, { method: "DELETE" });
+    setText($("fileMsg"), "已删除。");
+    await loadAttachments(CURRENT);
+  } catch (err) {
+    setText($("fileMsg"), err.message);
+  }
+}
+
+// ---------- 产品目录（团队共享） ----------
+
+async function loadProducts() {
+  try {
+    const data = await api("/api/products");
+    const ul = $("prodList");
+    ul.innerHTML = "";
+    setText($("prodCount"), "共 " + data.items.length + " 个");
+    if (!data.items.length) {
+      const li = document.createElement("li");
+      li.className = "hint";
+      li.textContent = "还没有产品，上面填个产品名就能加。";
+      ul.appendChild(li);
+      return;
+    }
+    for (const p of data.items) {
+      const li = document.createElement("li");
+      li.className = "cust-item";
+      const bits = [p.spec, p.price].filter(Boolean).join(" · ");
+      li.innerHTML =
+        '<div class="cust-name">' + escapeHtml(p.name) + "</div>" +
+        '<div class="cust-meta">' + (bits ? "<span>" + escapeHtml(bits) + "</span>" : "") +
+        "<span>" + escapeHtml(formatTime(p.created_at)) + "</span></div>";
+      const del = document.createElement("button");
+      del.className = "ghost danger";
+      del.textContent = "删";
+      del.style.marginLeft = "auto";
+      del.addEventListener("click", (e) => {
+        e.stopPropagation();
+        deleteProduct(p.id, p.name);
+      });
+      li.querySelector(".cust-meta").appendChild(del);
+      ul.appendChild(li);
+    }
+  } catch (err) {
+    setText($("prodMsg"), err.message);
+  }
+}
+
+async function createProduct() {
+  const name = $("pName").value.trim();
+  if (!name) return setText($("prodMsg"), "产品名必填");
+  try {
+    await api("/api/products", {
+      method: "POST",
+      body: JSON.stringify({
+        name,
+        spec: $("pSpec").value.trim(),
+        price: $("pPrice").value.trim(),
+      }),
+    });
+    $("pName").value = "";
+    $("pSpec").value = "";
+    $("pPrice").value = "";
+    setText($("prodMsg"), "已加：" + name);
+    $("pName").focus();
+    await loadProducts();
+  } catch (err) {
+    setText($("prodMsg"), err.message);
+  }
+}
+
+async function deleteProduct(pid, name) {
+  if (!confirm("删掉产品「" + name + "」？")) return;
+  try {
+    await api("/api/products/" + pid, { method: "DELETE" });
+    await loadProducts();
+  } catch (err) {
+    setText($("prodMsg"), err.message);
+  }
+}
+
 // ---------- 入口 ----------
 
 // 搜索：敲字后停 250ms 再查，免得每按一个键都打一次接口
@@ -366,6 +551,20 @@ function bind() {
   $("doTransfer").addEventListener("click", doTransfer);
   $("toggleHot").addEventListener("click", toggleHot);
   $("deleteCustomer").addEventListener("click", deleteCustomer);
+
+  // 左导航：切换视图
+  document.querySelectorAll(".nav-item[data-view]").forEach((el) => {
+    el.addEventListener("click", () => switchView(el.dataset.view));
+  });
+
+  // 附件
+  $("uploadFile").addEventListener("click", uploadAttachment);
+
+  // 产品目录
+  $("createProduct").addEventListener("click", createProduct);
+  for (const id of ["pName", "pSpec", "pPrice"]) {
+    $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") createProduct(); });
+  }
 }
 
 async function boot() {

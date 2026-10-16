@@ -1,9 +1,10 @@
 import os
 from pathlib import Path
+from urllib.parse import quote
 
 import httpx
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
@@ -290,6 +291,108 @@ def api_add_followup(customer_id: int, req: FollowupRequest, request: Request):
     if not content:
         raise HTTPException(status_code=400, detail="跟进内容不能为空")
     return {"id": db.add_followup(customer_id, user["id"], content)}
+
+
+@app.get("/api/options")
+def api_options(request: Request):
+    """选项库（国家 / 来源…）——**团队共享**，用来做下拉建议。
+
+    共享的理由：它不是客户隐私，是团队共同积累的"词典"。各存各的，
+    每个人都要重新攒一遍，"少打字"就没戏了。
+    """
+    auth.require_user(request)
+    return {
+        "country": db.list_options("country"),
+        "source": db.list_options("source"),
+    }
+
+
+# ---------- 附件（PI / 报价单） ----------
+
+MAX_UPLOAD = 10 * 1024 * 1024  # 10 MB：够放 PI / 报价单，又不至于把免费层塞满
+
+
+@app.post("/api/customers/{customer_id}/attachments")
+async def api_upload_attachment(
+    customer_id: int, request: Request, file: UploadFile = File(...)
+):
+    user = auth.require_user(request)
+    _visible_customer(customer_id, user)  # 往别人的客户里传文件？404
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="文件是空的")
+    if len(data) > MAX_UPLOAD:
+        raise HTTPException(status_code=413, detail="文件超过 10 MB，先压一下再传")
+    att_id = db.add_attachment(
+        customer_id, user["id"], file.filename or "未命名", file.content_type or "", data
+    )
+    return {"id": att_id, "size": len(data)}
+
+
+@app.get("/api/customers/{customer_id}/attachments")
+def api_list_attachments(customer_id: int, request: Request):
+    user = auth.require_user(request)
+    _visible_customer(customer_id, user)
+    return {"items": db.list_attachments(customer_id)}
+
+
+@app.get("/api/attachments/{att_id}")
+def api_download_attachment(att_id: int, request: Request):
+    user = auth.require_user(request)
+    att = db.get_attachment(att_id)
+    if att is None:
+        raise HTTPException(status_code=404, detail="附件不存在")
+    # 附件跟着客户走：看不到那个客户，就别想下它的文件
+    _visible_customer(att["customer_id"], user)
+    # 文件名可能带中文，直接塞进 header 会坏；用 RFC 5987 的写法
+    disposition = "attachment; filename*=UTF-8''" + quote(att["filename"])
+    return Response(
+        content=bytes(att["data"]),
+        media_type=att["content_type"] or "application/octet-stream",
+        headers={"Content-Disposition": disposition},
+    )
+
+
+@app.delete("/api/customers/{customer_id}/attachments/{att_id}")
+def api_delete_attachment(customer_id: int, att_id: int, request: Request):
+    user = auth.require_user(request)
+    _visible_customer(customer_id, user)
+    if not db.delete_attachment(att_id, customer_id):
+        raise HTTPException(status_code=404, detail="附件不存在")
+    return {"ok": True}
+
+
+# ---------- 产品目录（团队共享） ----------
+
+
+class ProductRequest(BaseModel):
+    name: str
+    spec: str = ""
+    price: str = ""
+    note: str = ""
+
+
+@app.get("/api/products")
+def api_list_products(request: Request):
+    auth.require_user(request)
+    return {"items": db.list_products()}
+
+
+@app.post("/api/products")
+def api_create_product(req: ProductRequest, request: Request):
+    auth.require_user(request)
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="产品名不能为空")
+    return {"id": db.create_product(name, req.spec.strip(), req.price.strip(), req.note.strip())}
+
+
+@app.delete("/api/products/{product_id}")
+def api_delete_product(product_id: int, request: Request):
+    auth.require_user(request)
+    if not db.delete_product(product_id):
+        raise HTTPException(status_code=404, detail="产品不存在")
+    return {"ok": True}
 
 
 # ==================================================================

@@ -43,6 +43,12 @@
 /* ---------------- 基础 ---------------- */
 * { box-sizing: border-box; }
 
+/* 兜底：hidden 属性靠浏览器默认的 display:none 生效，
+   但只要作者给同一个元素写了 display:flex / grid，就会被盖掉 —— 那时元素明明有
+   hidden 却照样显示。（这个坑真踩过：切换视图后两个视图同时显示。）
+   所以这里显式声明一次，宁可用 !important。 */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   font-family: "Microsoft YaHei", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -152,6 +158,64 @@ button.ghost-dark:hover { background: rgba(255, 255, 255, .08); color: #fff; fil
 /* 详情标题行 */
 .head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); }
 .head-actions { display: flex; gap: var(--sp-2); flex: 0 0 auto; }
+
+/* ---------------- 三栏外壳（工作台） ----------------
+   左导航 / 中列表 / 右详情。屏幕两侧原来空着的地方，现在都有用了。
+   宽度是流式的（不设 max-width）——所以宽屏上不会再留两条空白。 */
+.shell { display: flex; min-height: 100vh; align-items: stretch; }
+
+.sidebar {
+  flex: 0 0 210px; width: 210px;
+  background: linear-gradient(180deg, var(--appbar-2), var(--appbar));
+  display: flex; flex-direction: column; gap: var(--sp-4);
+  padding: var(--sp-4);
+  position: sticky; top: 0; height: 100vh;
+}
+.sidebar .brand { color: #fff; font-size: var(--fs-4); font-weight: 700; }
+
+.nav { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; }
+.nav-item {
+  display: block; width: 100%; min-height: 0; text-align: left;
+  padding: 9px var(--sp-3); border: 0; border-radius: var(--r-1);
+  background: transparent; color: var(--appbar-dim);
+  font-family: inherit; font-size: var(--fs-3); font-weight: 500;
+  text-decoration: none; cursor: pointer;
+}
+.nav-item:hover { background: rgba(255, 255, 255, .07); color: #fff; filter: none; }
+.nav-item.active { background: rgba(255, 255, 255, .14); color: #fff; }
+
+.sidebar-foot {
+  border-top: 1px solid rgba(255, 255, 255, .09);
+  padding-top: var(--sp-3);
+  display: flex; flex-direction: column; gap: var(--sp-2);
+}
+
+.content { flex: 1 1 auto; min-width: 0; padding: var(--sp-5); }
+.view { display: flex; gap: var(--sp-4); align-items: flex-start; }
+.pane-main { flex: 1 1 auto; min-width: 0; }
+.pane-detail { flex: 0 0 392px; position: sticky; top: var(--sp-5); }
+
+.section-title {
+  font-size: var(--fs-2); color: var(--text-3); font-weight: 600;
+  margin: var(--sp-3) 0 var(--sp-2); letter-spacing: .02em;
+}
+
+.file-input { padding: 6px; font-size: var(--fs-2); }
+.file-list { list-style: none; padding: 0; margin: var(--sp-2) 0 0; }
+.file-item {
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2) 0; border-bottom: 1px dashed var(--border);
+  font-size: var(--fs-2);
+}
+.file-item a { color: var(--primary); text-decoration: none; }
+.file-item a:hover { text-decoration: underline; }
+.file-size { color: var(--text-3); font-size: var(--fs-1); }
+
+/* 窄屏：右侧详情落下来，别再挤 */
+@media (max-width: 1120px) {
+  .view { flex-direction: column; }
+  .pane-detail { flex: 1 1 auto; position: static; width: 100%; }
+}
 button.danger { color: var(--danger); border-color: #fecaca; }
 button.danger:hover { background: var(--danger-soft); color: var(--danger); filter: none; }
 

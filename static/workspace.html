@@ -7,87 +7,137 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<header class="appbar">
-  <div class="appbar-inner">
-    <span class="brand">外贸客户工作台</span>
-    <div class="appbar-right">
-      <a href="/">背调工具</a>
-      <span id="whoami" class="who"></span>
+<div class="shell">
+
+  <!-- ============ 左：导航栏 ============ -->
+  <aside class="sidebar">
+    <div class="brand">外贸客户工作台</div>
+    <nav class="nav" id="nav">
+      <button class="nav-item active" data-view="customers">客户</button>
+      <button class="nav-item" data-view="products">产品目录</button>
+      <a class="nav-item" href="/">背调工具 ↗</a>
+    </nav>
+    <div class="sidebar-foot">
+      <div id="whoami" class="who"></div>
       <button id="logout" class="ghost-dark" hidden>退出</button>
     </div>
-  </div>
-</header>
+  </aside>
 
-<main class="wrap">
-  <!-- ============ 未登录 ============ -->
-  <section id="loginCard" class="card auth-card" hidden>
-    <h2 id="authTitle">登录</h2>
-    <input id="username" type="text" placeholder="用户名" autocomplete="username">
-    <input id="password" type="password" placeholder="密码" autocomplete="current-password">
-    <input id="code" type="text" placeholder="邀请码（注册时需要）" autocomplete="off" hidden>
-    <button id="submitAuth" style="width:100%;margin-top:4px">登录</button>
-    <p class="hint" style="text-align:center;margin-top:12px">
-      <a href="#" id="toggleMode">没有账号？去注册</a>
-    </p>
-    <p id="authMsg" class="status" style="text-align:center"></p>
-  </section>
+  <!-- ============ 右：内容区 ============ -->
+  <main class="content">
 
-  <!-- ============ 已登录 ============ -->
-  <section id="app" hidden>
-    <!-- 统计条：一眼看清今天要干什么 -->
-    <div class="stats" id="stats"></div>
-
-    <section class="card">
-      <div class="newrow">
-        <input id="newName" type="text" placeholder="客户姓名（必填）">
-        <input id="newPhone" type="text" placeholder="号码（必填）">
-        <input id="newCountry" type="text" placeholder="国家（必填）">
-      </div>
-      <div class="newrow">
-        <input id="newCompany" type="text" placeholder="公司名（选填）">
-        <input id="newSource" type="text" placeholder="来源：FB / 邮件 / 展会…">
-        <input id="newNote" type="text" placeholder="一句话备注">
-        <button id="createCustomer">建档</button>
-      </div>
-      <p id="appMsg" class="status"></p>
+    <!-- 未登录 -->
+    <section id="loginCard" class="card auth-card" hidden>
+      <h2 id="authTitle">登录</h2>
+      <input id="username" type="text" placeholder="用户名" autocomplete="username">
+      <input id="password" type="password" placeholder="密码" autocomplete="current-password">
+      <input id="code" type="text" placeholder="邀请码（注册时需要）" autocomplete="off" hidden>
+      <button id="submitAuth" style="width:100%;margin-top:4px">登录</button>
+      <p class="hint" style="text-align:center;margin-top:12px">
+        <a href="#" id="toggleMode">没有账号？去注册</a>
+      </p>
+      <p id="authMsg" class="status" style="text-align:center"></p>
     </section>
 
-    <div class="split">
-      <section class="card list-col">
-        <h2>我的客户 <span id="custCount" class="hint"></span></h2>
-        <input id="searchBox" type="search" class="search" placeholder="搜姓名 / 号码 / 公司">
-        <ul id="custList" class="cust-list"></ul>
-      </section>
+    <!-- 已登录 -->
+    <section id="app" hidden>
 
-      <section class="card detail-col">
-        <p id="detailEmpty" class="hint">← 左边点一个客户</p>
-        <div id="detail" hidden>
-          <div class="detail-head">
-            <div class="head-row">
-              <h2 id="dTitle"></h2>
-              <div class="head-actions">
-                <button id="toggleHot" class="ghost">标记高意向</button>
-                <button id="deleteCustomer" class="ghost danger">删除</button>
-              </div>
+      <!-- 视图一：客户 -->
+      <div id="viewCustomers" class="view">
+        <div class="pane-main">
+          <div class="stats" id="stats"></div>
+
+          <section class="card">
+            <div class="newrow">
+              <input id="newName" type="text" placeholder="客户姓名（必填）">
+              <input id="newPhone" type="text" placeholder="号码（必填）">
+              <input id="newCountry" type="text" placeholder="国家（必填）" list="optCountry">
             </div>
-            <p id="dMeta" class="hint"></p>
-          </div>
-          <div class="newrow">
-            <input id="fuContent" type="text" placeholder="写一条跟进（回车就存）">
-            <button id="addFollowup">记下</button>
-          </div>
-          <ul id="fuList" class="fu-list"></ul>
-          <hr>
-          <div class="newrow">
-            <select id="transferTo"></select>
-            <button id="doTransfer" class="ghost">把客户转给他</button>
-          </div>
-          <p class="hint" style="margin-top:8px">转出去之后，就归对方管了（你这边不再显示）。</p>
+            <div class="newrow">
+              <input id="newCompany" type="text" placeholder="公司名（选填）">
+              <input id="newSource" type="text" placeholder="来源：FB / 邮件 / 展会…" list="optSource">
+              <input id="newNote" type="text" placeholder="一句话备注">
+              <button id="createCustomer">建档</button>
+            </div>
+            <p id="appMsg" class="status"></p>
+          </section>
+
+          <section class="card">
+            <h2>我的客户 <span id="custCount" class="hint"></span></h2>
+            <input id="searchBox" type="search" class="search" placeholder="搜姓名 / 号码 / 公司">
+            <ul id="custList" class="cust-list"></ul>
+          </section>
         </div>
-      </section>
-    </div>
-  </section>
-</main>
+
+        <!-- 右侧详情栏：一直在这儿，不占中间 -->
+        <aside class="pane-detail">
+          <section class="card">
+            <p id="detailEmpty" class="hint">← 左边点一个客户</p>
+            <div id="detail" hidden>
+              <div class="detail-head">
+                <div class="head-row">
+                  <h2 id="dTitle"></h2>
+                  <div class="head-actions">
+                    <button id="toggleHot" class="ghost">标记高意向</button>
+                    <button id="deleteCustomer" class="ghost danger">删除</button>
+                  </div>
+                </div>
+                <p id="dMeta" class="hint"></p>
+              </div>
+
+              <div class="newrow">
+                <input id="fuContent" type="text" placeholder="写一条跟进（回车就存）">
+                <button id="addFollowup">记下</button>
+              </div>
+              <ul id="fuList" class="fu-list"></ul>
+
+              <hr>
+              <h3 class="section-title">附件（PI / 报价单）</h3>
+              <div class="newrow">
+                <input id="fileInput" type="file" class="file-input">
+                <button id="uploadFile" class="ghost">上传</button>
+              </div>
+              <p id="fileMsg" class="status"></p>
+              <ul id="fileList" class="file-list"></ul>
+
+              <hr>
+              <h3 class="section-title">转给同事</h3>
+              <div class="newrow">
+                <select id="transferTo"></select>
+                <button id="doTransfer" class="ghost">转给他</button>
+              </div>
+              <p class="hint" style="margin-top:8px">转出去之后，就归对方管了（你这边不再显示）。</p>
+            </div>
+          </section>
+        </aside>
+      </div>
+
+      <!-- 视图二：产品目录 -->
+      <div id="viewProducts" class="view" hidden>
+        <div class="pane-main">
+          <section class="card">
+            <div class="newrow">
+              <input id="pName" type="text" placeholder="产品名（必填）">
+              <input id="pSpec" type="text" placeholder="规格 / 型号">
+              <input id="pPrice" type="text" placeholder="参考价（选填）">
+              <button id="createProduct">加产品</button>
+            </div>
+            <p id="prodMsg" class="status"></p>
+          </section>
+          <section class="card">
+            <h2>产品 <span id="prodCount" class="hint"></span></h2>
+            <ul id="prodList" class="cust-list"></ul>
+          </section>
+        </div>
+      </div>
+
+    </section>
+  </main>
+</div>
+
+<datalist id="optCountry"></datalist>
+<datalist id="optSource"></datalist>
+
 <script src="/static/workspace.js"></script>
 </body>
 </html>

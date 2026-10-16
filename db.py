@@ -110,6 +110,56 @@ def init_db():
             )
             """
         )
+        # 选项库：国家 / 来源 这类字段，谁填过一次，以后大家就能直接下拉选。
+        # 故意**不分归属**——它不是客户隐私，是团队共同积累的"词典"，
+        # 各存各的就没意义了（每个人都要重新攒一遍）。
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS options (
+                id         SERIAL PRIMARY KEY,
+                kind       TEXT NOT NULL,
+                value      TEXT NOT NULL,
+                created_at TEXT,
+                UNIQUE (kind, value)
+            )
+            """
+        )
+
+        # 附件：PI / 报价单这类文件，业务自己传上来挂在客户名下。
+        # 直接存进 Postgres（bytea）——少一个外部依赖，免费层 0.5GB 够放上千份 PDF。
+        # 以后不够用了再换对象存储，那时只需改这两个函数。
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS attachments (
+                id           SERIAL PRIMARY KEY,
+                customer_id  INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+                user_id      INTEGER NOT NULL REFERENCES users(id),
+                filename     TEXT NOT NULL,
+                content_type TEXT,
+                size         INTEGER NOT NULL,
+                data         BYTEA NOT NULL,
+                created_at   TEXT
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_attachments_customer ON attachments(customer_id)"
+        )
+
+        # 产品目录：也是**团队共享**的（公司卖的是同一批产品）。
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS products (
+                id         SERIAL PRIMARY KEY,
+                name       TEXT NOT NULL,
+                spec       TEXT,
+                price      TEXT,
+                note       TEXT,
+                created_at TEXT
+            )
+            """
+        )
+
         # 这两条是最常用的查询条件，给它们建索引
         conn.execute("CREATE INDEX IF NOT EXISTS idx_customers_owner ON customers(owner_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_followups_customer ON followups(customer_id)")
@@ -240,7 +290,10 @@ def phone_taken(phone_norm):
 
 
 def create_customer(owner_id, contact_name, phone, country, company="", source="", note=""):
-    """建档。姓名 / 号码 / 国家 必填（由接口层强制），公司名选填。"""
+    """建档。姓名 / 号码 / 国家 必填（由接口层强制），公司名选填。
+
+    顺手把这次填的 国家 / 来源 记进选项库——下次（谁）建档就能直接下拉选。
+    """
     with pool.connection() as conn:
         row = conn.execute(
             "INSERT INTO customers"
@@ -260,7 +313,24 @@ def create_customer(owner_id, contact_name, phone, country, company="", source="
                 _now(),
             ),
         ).fetchone()
+        for kind, value in (("country", country), ("source", source)):
+            value = (value or "").strip()
+            if value:
+                conn.execute(
+                    "INSERT INTO options (kind, value, created_at) VALUES (%s, %s, %s)"
+                    " ON CONFLICT (kind, value) DO NOTHING",  # 已经有了就什么都不做
+                    (kind, value, _now()),
+                )
     return row["id"]
+
+
+def list_options(kind):
+    """某个分类下攒下来的所有选项（团队共享）。"""
+    with pool.connection() as conn:
+        rows = conn.execute(
+            "SELECT value FROM options WHERE kind = %s ORDER BY id DESC", (kind,)
+        ).fetchall()
+    return [r["value"] for r in rows]
 
 
 def list_customers(owner_id, is_admin=False, q=""):
@@ -382,3 +452,77 @@ def list_followups(customer_id):
             """,
             (customer_id,),
         ).fetchall()
+
+
+# ===================== V2：附件 =====================
+
+
+def add_attachment(customer_id, user_id, filename, content_type, data):
+    with pool.connection() as conn:
+        row = conn.execute(
+            "INSERT INTO attachments"
+            " (customer_id, user_id, filename, content_type, size, data, created_at)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (customer_id, user_id, filename, content_type, len(data), data, _now()),
+        ).fetchone()
+    return row["id"]
+
+
+def list_attachments(customer_id):
+    """附件清单——**故意不取 data 字段**。
+
+    列表页只要文件名和大小；把二进制一起捞出来，客户一多就会又慢又占内存。
+    """
+    with pool.connection() as conn:
+        return conn.execute(
+            """
+            SELECT a.id, a.filename, a.content_type, a.size, a.created_at,
+                   u.display_name, u.username
+            FROM attachments a JOIN users u ON u.id = a.user_id
+            WHERE a.customer_id = %s
+            ORDER BY a.id DESC
+            """,
+            (customer_id,),
+        ).fetchall()
+
+
+def get_attachment(att_id):
+    """取单个附件（含内容）。只有下载那一下才用。"""
+    with pool.connection() as conn:
+        return conn.execute(
+            "SELECT * FROM attachments WHERE id = %s", (att_id,)
+        ).fetchone()
+
+
+def delete_attachment(att_id, customer_id):
+    """删附件。customer_id 也进条件——免得用一个 id 删掉别处的文件。"""
+    with pool.connection() as conn:
+        cur = conn.execute(
+            "DELETE FROM attachments WHERE id = %s AND customer_id = %s",
+            (att_id, customer_id),
+        )
+        return cur.rowcount > 0
+
+
+# ===================== V2：产品目录（团队共享） =====================
+
+
+def create_product(name, spec="", price="", note=""):
+    with pool.connection() as conn:
+        row = conn.execute(
+            "INSERT INTO products (name, spec, price, note, created_at)"
+            " VALUES (%s, %s, %s, %s, %s) RETURNING id",
+            (name, spec, price, note, _now()),
+        ).fetchone()
+    return row["id"]
+
+
+def list_products():
+    with pool.connection() as conn:
+        return conn.execute("SELECT * FROM products ORDER BY id DESC").fetchall()
+
+
+def delete_product(product_id):
+    with pool.connection() as conn:
+        cur = conn.execute("DELETE FROM products WHERE id = %s", (product_id,))
+        return cur.rowcount > 0
