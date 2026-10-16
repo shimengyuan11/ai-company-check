@@ -3,3 +3,5 @@ uvicorn
 httpx
 python-dotenv
 psycopg[binary,pool]
+bcrypt
+itsdangerous
