@@ -25,6 +25,14 @@ function renderMarkdown(text) {
   return escapeHtml(text).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
 }
 
+// 后端统一存 UTC 时间。转成浏览者所在时区再显示。
+// 老数据可能没带时区后缀（没有 +00:00），补个 Z 当 UTC 处理，否则浏览器会误当成当地时间。
+function formatTime(iso) {
+  const hasTz = /[zZ]$|[+-]\d\d:?\d\d$/.test(iso);
+  const d = new Date(hasTz ? iso : iso + "Z");
+  return isNaN(d) ? iso : d.toLocaleString("zh-CN", { hour12: false });
+}
+
 // 读历史列表，渲染成 <li>
 async function loadHistory() {
   try {
@@ -39,7 +47,7 @@ async function loadHistory() {
     }
     for (const item of data.items) {
       const li = document.createElement("li");
-      li.textContent = item.company + " —— " + item.created_at;
+      li.textContent = item.company + " —— " + formatTime(item.created_at);
       li.className = "history-item";
       li.title = "点击查看这条详情";
       li.addEventListener("click", () => showDetail(item.id));
