@@ -104,9 +104,34 @@ async function logout() {
 
 // ---------- 客户列表 ----------
 
+// 统计条：把「今天该干什么」变成一眼可见的数字
+function renderStats(items) {
+  const todayStr = new Date().toLocaleDateString("zh-CN");
+  const isToday = (c) =>
+    c.created_at && new Date(c.created_at).toLocaleDateString("zh-CN") === todayStr;
+  // 克制：只给「主指标」上品牌色，只给「需要动手的那张」上警示色，其余保持中性
+  const cards = [
+    { n: items.length, label: "客户总数", cls: "brand" },
+    { n: items.filter((c) => c.high_intent).length, label: "高意向", cls: "" },
+    { n: items.filter(isToday).length, label: "今日新增", cls: "" },
+    { n: items.filter((c) => !c.followup_count).length, label: "还没写跟进", cls: "warn" },
+  ];
+  const box = $("stats");
+  box.innerHTML = "";
+  for (const c of cards) {
+    const d = document.createElement("div");
+    d.className = "stat " + c.cls;
+    d.innerHTML =
+      '<div class="stat-num">' + c.n + "</div>" +
+      '<div class="stat-label">' + escapeHtml(c.label) + "</div>";
+    box.appendChild(d);
+  }
+}
+
 async function loadCustomers() {
   try {
     const data = await api("/api/customers");
+    renderStats(data.items);
     const list = $("custList");
     list.innerHTML = "";
     setText($("custCount"), "共 " + data.items.length + " 个");
@@ -121,13 +146,13 @@ async function loadCustomers() {
       const li = document.createElement("li");
       li.className = "cust-item" + (c.id === CURRENT ? " active" : "");
       li.dataset.id = c.id;
-      const flags = [];
-      if (c.high_intent) flags.push("高意向");
-      if (c.source) flags.push(c.source);
+      const tags = [];
+      if (c.source) tags.push('<span class="tag src">' + escapeHtml(c.source) + "</span>");
+      if (c.high_intent) tags.push('<span class="tag hot">高意向</span>');
       li.innerHTML =
-        '<span class="cust-name">' + escapeHtml(c.company) + "</span>" +
-        '<span class="cust-meta">' + escapeHtml(flags.join(" · ")) +
-        " · 跟进 " + c.followup_count + " 条</span>";
+        '<div class="cust-name">' + escapeHtml(c.company) + "</div>" +
+        '<div class="cust-meta">' + tags.join("") +
+        "<span>跟进 " + c.followup_count + " 条</span></div>";
       li.addEventListener("click", () => openCustomer(c.id));
       list.appendChild(li);
     }
