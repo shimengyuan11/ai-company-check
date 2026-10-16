@@ -2,28 +2,26 @@
 
 > `README.md` 讲"这个项目是什么、怎么用"；这份讲"怎么继续开发它"。
 
-## 停在哪儿（2026-10-15 收工 · 下次从这里续）
+## 数据层迁移：已完成（2026-10-16）
 
-**一句话**：数据层从 SQLite 换 Postgres 的代码已写完、本地 diff 已核验，但**还没连真实库验证、还没推送**。
+数据层从 SQLite 换成了**托管 Postgres（Neon 免费层）**，线上已实测验证：
+本地写的一条记录出现在线上、跨过一次重新部署仍在。现在本地和线上共用同一个库。
 
-- **⚠️ 推之前必须先做这一件事**：去 https://neon.com 建个免费库，把连接串配到**两处**——
-  本地 `.env` 的 `DATABASE_URL`，和 **Render 后台的环境变量**。
-  **否则一推送，线上会在启动时直接崩**（`db.py` 一导入就读 `DATABASE_URL`，读不到就 `RuntimeError`）。
-- **本地现状**：`.env` 里还没有 `DATABASE_URL`，所以现在本地 `uvicorn main:app` 会报
-  「缺少配置：DATABASE_URL」——**这是预期行为，不是 bug**。线上跑的还是旧代码，正常。
-- **续上的三步**：① 配好上面两处连接串 → ② 本地验证（`init_db` / 写一条 / 读列表 / 读单条，再起服务用浏览器点一遍）
-  → ③ 提交推送；等 Render 部署完跑一条背调，再触发一次 **Manual Deploy**，确认那条记录还在
-  （这才算"数据不再丢"的证据）。
-- **为什么这么改**：实测发现每次重新部署都会清空历史，而 PRD 的验收标准写的就是"刷新后历史还在"。
-- **否决过的岔路**：① 不用 ORM（沿用既有决策，原生驱动 `psycopg` + 手写 SQL 更透明）；
-  ② 不做"SQLite/Postgres 双方言"——那会让本地和线上跑在不同实现上、行为分叉；
-  ③ 不迁移旧的本地测试数据（新库从空开始，旧数据备份在 `backup-data.db`）。
-- **用户提的下一步方向**：优化结果/背景页面，并补一些其他功能。
+- **配置**：同一个连接串——本地放 `.env` 的 `DATABASE_URL`，线上放 Render 环境变量
+- **⚠️ 顺序很重要**：换库后的代码「读不到 `DATABASE_URL` 就拒绝启动」，
+  所以**先在 Render 配好变量、再推送代码**；反了会让线上启动即崩
+- **迁移后暴露、已一并修掉的两个问题**（详见下面「数据与部署的取舍」）：
+  ① 时区——本机 UTC+8 与服务器 UTC 混写会差 8 小时 → 统一存 UTC，前端转本地
+  ② 性能——远程库每次建连要 ~2 秒 → 上连接池
+- **否决过的岔路**：① 不用 ORM（沿用既有决策）；② 不做「SQLite/Postgres 双方言」
+  （会让本地与线上跑在不同实现上、行为分叉）；③ 不迁移旧的本地测试数据
+  （旧数据备份在 `backup-data.db`）
+- **用户提的下一步方向**：优化结果/背景页面，并补一些其他功能
 
 ## 环境与本地运行
 
 - Python 3.12+（开发时用的是 3.15）
-- 依赖见 `requirements.txt`：`fastapi` / `uvicorn` / `httpx` / `python-dotenv` / `psycopg[binary]`
+- 依赖见 `requirements.txt`：`fastapi` / `uvicorn` / `httpx` / `python-dotenv` / `psycopg[binary,pool]`
 - 环境变量放在项目根目录的 `.env`（已在 `.gitignore` 中，不进仓库）：
   `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL`，外加 `DATABASE_URL`（Postgres 连接串）
 
@@ -40,7 +38,7 @@ uvicorn main:app --reload
 |---|---|
 | `main.py` | FastAPI 应用与路由：`/`（页面）、`POST /analyze`、`GET /history`、`GET /history/{id}`；启动时调用 `init_db()` |
 | `llm.py` | 提示词 + 调 LLM（httpx；显式 `trust_env=False`，避免请求被系统代理劫持） |
-| `db.py` | Postgres 操作（驱动 `psycopg`）：建表 / 存一条 / 读列表 / 读单条；连接串取 `DATABASE_URL`；表结构见 `PRD.md` 的字段表 |
+| `db.py` | Postgres 操作（驱动 `psycopg` + 连接池 `psycopg_pool`）：建表 / 存一条 / 读列表 / 读单条；连接串取 `DATABASE_URL`；时间戳统一存 UTC；表结构见 `PRD.md` 的字段表 |
 | `static/` | 前端三件套；`app.js` 用 `fetch` 调 `POST /analyze`、`GET /history` 与 `GET /history/{id}`（点历史展开详情） |
 
 ## 数据与部署的取舍
@@ -51,6 +49,12 @@ uvicorn main:app --reload
 - 生产化还可补：加索引与分页（现在只靠主键索引，列表默认取最近 10 条）
 - **SQLite → Postgres 的三处差异**：占位符 `?`→`%s`、自增 `AUTOINCREMENT`→`SERIAL`、
   取新 id `lastrowid`→`RETURNING id`（都写在 `db.py` 文件头注释里）
+- **换远程库后暴露的两条经验**（SQLite 时代看不出来，写在这里免得以后重踩）：
+  - **时间戳统一存 UTC**：`datetime.now()` 存的是「跑代码那台机器的本地时间」，
+    本机（UTC+8）和 Render（UTC）写进同一张表会差 8 小时。前端用 `formatTime()` 转本地显示
+  - **连接必须复用**：连一次远程库要 ~2 秒（TLS 握手 + 认证），每个请求都新建连接会让
+    页面每次加载卡 2~3 秒。改用 `psycopg_pool` 连接池（实测：本地 2.0~2.2s → 0.9s，
+    线上数据库那段 1.8~2.2s → ~0.7s）。剩下的是网络往返，只能靠换更近的区域解决
 
 ## 当前状态
 
@@ -62,7 +66,9 @@ uvicorn main:app --reload
 - [x] 前端接上 `/history/{id}`：点历史某条在结果区展开该条完整详情（标题随之切到「历史记录 #N」）
 - [x] 结果区的 Markdown 渲染：`**加粗**` 已渲染为 `<strong>`（前端先 `escapeHtml` 转义、再替换，防 XSS）
 - [x] 清掉本地验证时造出的测试数据（`测试公司` / `test`；删前备份在 `backup-data.db`）
-- [ ] 数据层从 SQLite 换成托管 Postgres（历史不再因重新部署清空）——**代码已改，待真实库验证**
+- [x] 数据层从 SQLite 换成托管 Postgres（历史不再因重新部署清空）——2026-10-16 线上实测通过
+- [x] 时区统一存 UTC + 前端转本地显示（本机 UTC+8 与服务器 UTC 混写曾差 8 小时）
+- [x] 数据库连接改用连接池（远程库每次建连 ~2 秒，页面加载曾卡 2~3 秒）
 
 ## 走过的岔路（否决过的方案与原因）
 
