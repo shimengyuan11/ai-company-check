@@ -86,6 +86,7 @@ def init_db():
                 owner_id     INTEGER NOT NULL REFERENCES users(id),
                 contact_name TEXT,
                 phone        TEXT,
+                phone_norm   TEXT,
                 country      TEXT,
                 company      TEXT,
                 source       TEXT,
@@ -120,6 +121,12 @@ def init_db():
         conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS contact_name TEXT")
         conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS phone TEXT")
         conn.execute("ALTER TABLE customers ALTER COLUMN company DROP NOT NULL")
+        # 查重用的归一化号码（只留数字）。+86 138 0000 1234 与 13800001234 是同一个号，
+        # 直接比原字符串会漏掉——所以另存一份"只留数字"的副本专门用来比对。
+        conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS phone_norm TEXT")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_customers_phone_norm ON customers(phone_norm)"
+        )
 
 
 # ===================== V1：背调 =====================
@@ -197,14 +204,61 @@ def list_users():
 # ===================== V2：客户 =====================
 
 
+def norm_phone(phone):
+    """号码归一化：只留 0-9。
+
+    这样 `+86 138 0000 1234`、`138-0000-1234`、`13800001234` 在比对时算同一个号。
+    （国家码的有无仍算不同——那是录入习惯问题，不是这个函数能解决的。）
+    """
+    return "".join(ch for ch in (phone or "") if ch in "0123456789")
+
+
+def phone_taken(phone_norm):
+    """这个号码是不是已经被**任何人**建档了（跨所有业务员）。
+
+    只回答"是/否"，**绝不告诉调用方是谁的**——这样既防撞单，
+    又不破坏"各管各的"（你知道冲突存在，但看不到对方的客户）。
+
+    判定用两条：① 归一化后完全相同；② **尾号 9 位相同**。
+    为什么要第②条：同一个号，有人写 `+86 138 0000 1234`、有人写 `13800001234`，
+    归一化后是 `8613800001234` 和 `13800001234`——国家码在前面，**尾号才是唯一的那段**。
+    """
+    if not phone_norm:
+        return False
+    with pool.connection() as conn:
+        row = conn.execute(
+            """
+            SELECT 1 AS x FROM customers
+            WHERE phone_norm = %(p)s
+               OR (length(phone_norm) >= 9 AND length(%(p)s) >= 9
+                   AND right(phone_norm, 9) = right(%(p)s, 9))
+            LIMIT 1
+            """,
+            {"p": phone_norm},
+        ).fetchone()
+    return row is not None
+
+
 def create_customer(owner_id, contact_name, phone, country, company="", source="", note=""):
     """建档。姓名 / 号码 / 国家 必填（由接口层强制），公司名选填。"""
     with pool.connection() as conn:
         row = conn.execute(
             "INSERT INTO customers"
-            " (owner_id, contact_name, phone, country, company, source, note, created_at, updated_at)"
-            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
-            (owner_id, contact_name, phone, country, company, source, note, _now(), _now()),
+            " (owner_id, contact_name, phone, phone_norm, country, company, source, note,"
+            "  created_at, updated_at)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (
+                owner_id,
+                contact_name,
+                phone,
+                norm_phone(phone),
+                country,
+                company,
+                source,
+                note,
+                _now(),
+                _now(),
+            ),
         ).fetchone()
     return row["id"]
 
@@ -239,7 +293,12 @@ def get_customer(customer_id, viewer_id, is_admin=False):
 
 def update_customer(customer_id, viewer_id, is_admin=False, **fields):
     """改客户资料。只允许改白名单里的字段，避免调用方随手拼 SQL。"""
-    allowed = ("contact_name", "phone", "country", "company", "source", "note", "stage", "high_intent")
+    allowed = (
+        "contact_name", "phone", "phone_norm", "country",
+        "company", "source", "note", "stage", "high_intent",
+    )
+    if "phone" in fields:  # 号码改了，归一化副本要跟着改，否则查重会失准
+        fields["phone_norm"] = norm_phone(fields["phone"])
     sets, values = [], []
     for key in allowed:
         if key in fields:

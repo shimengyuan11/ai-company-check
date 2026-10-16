@@ -211,6 +211,13 @@ def api_create_customer(req: CustomerRequest, request: Request):
     # 必填在接口层强制——库里不加 NOT NULL，是为了让老数据能平滑升级（见 db.init_db 的注释）
     if not all(values.values()):
         raise HTTPException(status_code=400, detail="姓名、号码、国家 三个都要填")
+    # 查重：号码被**任何人**建过就拒绝（防撞单）。
+    # 只说「已经被建过」，不说「是谁建的」——这样既防重复，又不破坏「各管各的」。
+    if db.phone_taken(db.norm_phone(values["phone"])):
+        raise HTTPException(
+            status_code=409,
+            detail="这个号码已经被建档过了（可能是同事建的）。让对方把客户转给你，或者换个号码。",
+        )
     cid = db.create_customer(
         user["id"],
         values["contact_name"],
@@ -242,8 +249,14 @@ def api_get_customer(customer_id: int, request: Request):
 @app.patch("/api/customers/{customer_id}")
 def api_patch_customer(customer_id: int, req: CustomerPatch, request: Request):
     user = auth.require_user(request)
-    _visible_customer(customer_id, user)
+    current = _visible_customer(customer_id, user)
     fields = {k: v for k, v in req.model_dump().items() if v is not None}
+    # 改号码时也要查重（否则这个规则从 PATCH 就能绕过去）；
+    # 「还是自己原来那个号」不算冲突。
+    if "phone" in fields:
+        new_norm = db.norm_phone(fields["phone"])
+        if new_norm and new_norm != db.norm_phone(current["phone"]) and db.phone_taken(new_norm):
+            raise HTTPException(status_code=409, detail="这个号码已经被建档过了。")
     db.update_customer(customer_id, user["id"], user["is_admin"], **fields)
     return db.get_customer(customer_id, user["id"], user["is_admin"])
 
