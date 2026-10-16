@@ -85,6 +85,9 @@ PRD：AI 公司背调系统（最小版）
 
 ## 相关文档
 
+- **本文档是 V1（AI 公司背调系统，已上线）。V2 是「外贸客户工作台」——见 `docs/PRD-v2.md`**
 - `README.md`——这是什么、怎么用
 - `DEVELOPMENT.md`——怎么继续开发它（含关键决策与被否决的方案）
+- `docs/PRD-v2.md`——V2 需求（客户建档 / 跟进 / 登录 / 移交）
+- `docs/v2-needs-triage.md`——V2 的需求盘点与切分（含排刀与四个痛点）
 - `docs/retrospective-and-framework.md`——**把这个课题落地的方法论与复盘**（六问六阶段 + 流程图 + 给别人讲的骨架）
