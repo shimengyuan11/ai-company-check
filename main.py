@@ -195,9 +195,10 @@ def api_users(request: Request):
 
 
 @app.get("/api/customers")
-def api_list_customers(request: Request):
+def api_list_customers(request: Request, q: str = ""):
+    """客户列表。q 是搜索词（姓名 / 公司 / 号码）。"""
     user = auth.require_user(request)
-    return {"items": db.list_customers(user["id"], user["is_admin"])}
+    return {"items": db.list_customers(user["id"], user["is_admin"], q)}
 
 
 @app.post("/api/customers")

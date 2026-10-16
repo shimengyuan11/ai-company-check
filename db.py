@@ -263,22 +263,36 @@ def create_customer(owner_id, contact_name, phone, country, company="", source="
     return row["id"]
 
 
-def list_customers(owner_id, is_admin=False):
+def list_customers(owner_id, is_admin=False, q=""):
     """客户列表。普通人只看自己的；管理员看全部。
 
     每条带上「有多少条跟进」，列表页一眼能看出谁很久没跟了。
+
+    q 非空时按 姓名 / 公司 / 号码 模糊匹配。号码要**同时比原样和归一化两种**——
+    否则你搜 `13800001234`，就找不到人家录成 `+86 138 0000 1234` 的那条。
     """
+    q = (q or "").strip()
+    params = [is_admin, owner_id]
+    sql = """
+        SELECT c.*,
+               (SELECT count(*) FROM followups f WHERE f.customer_id = c.id) AS followup_count
+        FROM customers c
+        WHERE %s OR c.owner_id = %s
+    """
+    if q:
+        like = f"%{q}%"
+        digits = norm_phone(q)
+        sql += """
+          AND (c.contact_name ILIKE %s
+               OR c.company ILIKE %s
+               OR c.phone ILIKE %s
+               OR (%s <> '' AND c.phone_norm LIKE %s))
+        """
+        # 最后那个 %s <> '' 是防线：如果搜的词里一个数字都没有，别让它匹配到所有号码
+        params += [like, like, like, digits, f"%{digits}%"]
+    sql += " ORDER BY c.id DESC"
     with pool.connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT c.*,
-                   (SELECT count(*) FROM followups f WHERE f.customer_id = c.id) AS followup_count
-            FROM customers c
-            WHERE %s OR c.owner_id = %s
-            ORDER BY c.id DESC
-            """,
-            (is_admin, owner_id),
-        ).fetchall()
+        rows = conn.execute(sql, params).fetchall()
     return rows
 
 

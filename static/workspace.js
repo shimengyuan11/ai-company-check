@@ -4,6 +4,7 @@
 const $ = (id) => document.getElementById(id);
 let CURRENT = null; // 当前打开的客户 id
 let SIGNUP_OPEN = true; // 注册是否开放（启动时问后端）
+let SEARCH = ""; // 当前搜索词
 
 // ---------- 小工具 ----------
 
@@ -130,7 +131,8 @@ function renderStats(items) {
 
 async function loadCustomers() {
   try {
-    const data = await api("/api/customers");
+    const url = "/api/customers" + (SEARCH ? "?q=" + encodeURIComponent(SEARCH) : "");
+    const data = await api(url);
     renderStats(data.items);
     const list = $("custList");
     list.innerHTML = "";
@@ -138,7 +140,9 @@ async function loadCustomers() {
     if (!data.items.length) {
       const li = document.createElement("li");
       li.className = "hint";
-      li.textContent = "还没有客户，上面填姓名 / 号码 / 国家 就能建。";
+      li.textContent = SEARCH
+        ? "没有匹配「" + SEARCH + "」的客户。"
+        : "还没有客户，上面填姓名 / 号码 / 国家 就能建。";
       list.appendChild(li);
       return;
     }
@@ -328,6 +332,16 @@ function closeDetail() {
 
 // ---------- 入口 ----------
 
+// 搜索：敲字后停 250ms 再查，免得每按一个键都打一次接口
+let searchTimer = null;
+function onSearchInput() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    SEARCH = $("searchBox").value.trim();
+    loadCustomers();
+  }, 250);
+}
+
 function bind() {
   $("submitAuth").addEventListener("click", submitAuth);
   $("password").addEventListener("keydown", (e) => { if (e.key === "Enter") submitAuth(); });
@@ -338,6 +352,7 @@ function bind() {
     renderAuthMode();
   });
   $("logout").addEventListener("click", logout);
+  $("searchBox").addEventListener("input", onSearchInput);
 
   $("createCustomer").addEventListener("click", createCustomer);
   // 「建档 ≤30 秒」：每个框都能回车提交，手不用离开键盘

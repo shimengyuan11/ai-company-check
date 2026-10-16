@@ -198,6 +198,9 @@ button.danger:hover { background: var(--danger-soft); color: var(--danger); filt
 .detail-col { flex: 2 1 400px; }
 
 /* ---------------- 客户列表 ---------------- */
+/* 列表里的搜索框：比表单框紧凑一点 */
+.search { margin-bottom: var(--sp-3); padding: 7px var(--sp-3); font-size: var(--fs-2); }
+
 .cust-list { list-style: none; padding: 0; margin: 0; }
 .cust-item {
   padding: var(--sp-3);
