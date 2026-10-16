@@ -82,16 +82,18 @@ def init_db():
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS customers (
-                id          SERIAL PRIMARY KEY,
-                owner_id    INTEGER NOT NULL REFERENCES users(id),
-                company     TEXT NOT NULL,
-                source      TEXT,
-                note        TEXT,
-                country     TEXT,
-                stage       TEXT,
-                high_intent BOOLEAN NOT NULL DEFAULT FALSE,
-                created_at  TEXT,
-                updated_at  TEXT
+                id           SERIAL PRIMARY KEY,
+                owner_id     INTEGER NOT NULL REFERENCES users(id),
+                contact_name TEXT,
+                phone        TEXT,
+                country      TEXT,
+                company      TEXT,
+                source       TEXT,
+                note         TEXT,
+                stage        TEXT,
+                high_intent  BOOLEAN NOT NULL DEFAULT FALSE,
+                created_at   TEXT,
+                updated_at   TEXT
             )
             """
         )
@@ -110,6 +112,14 @@ def init_db():
         # 这两条是最常用的查询条件，给它们建索引
         conn.execute("CREATE INDEX IF NOT EXISTS idx_customers_owner ON customers(owner_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_followups_customer ON followups(customer_id)")
+
+        # —— 老库升级（幂等，可以反复跑）——
+        # 建档字段从「公司名必填」改成「姓名 / 号码 / 国家 必填、公司选填」。
+        # 这里只加列、放开 company 的非空约束；**必填在接口层强制**——
+        # 因为库里已有的老记录没有姓名和号码，硬加 NOT NULL 会让升级直接失败。
+        conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS contact_name TEXT")
+        conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS phone TEXT")
+        conn.execute("ALTER TABLE customers ALTER COLUMN company DROP NOT NULL")
 
 
 # ===================== V1：背调 =====================
@@ -187,13 +197,14 @@ def list_users():
 # ===================== V2：客户 =====================
 
 
-def create_customer(owner_id, company, source="", note=""):
-    """建档。只有 company 必填——这就是「建档 ≤30 秒」的来源。"""
+def create_customer(owner_id, contact_name, phone, country, company="", source="", note=""):
+    """建档。姓名 / 号码 / 国家 必填（由接口层强制），公司名选填。"""
     with pool.connection() as conn:
         row = conn.execute(
-            "INSERT INTO customers (owner_id, company, source, note, created_at, updated_at)"
-            " VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
-            (owner_id, company, source, note, _now(), _now()),
+            "INSERT INTO customers"
+            " (owner_id, contact_name, phone, country, company, source, note, created_at, updated_at)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (owner_id, contact_name, phone, country, company, source, note, _now(), _now()),
         ).fetchone()
     return row["id"]
 
@@ -228,7 +239,7 @@ def get_customer(customer_id, viewer_id, is_admin=False):
 
 def update_customer(customer_id, viewer_id, is_admin=False, **fields):
     """改客户资料。只允许改白名单里的字段，避免调用方随手拼 SQL。"""
-    allowed = ("company", "source", "note", "country", "stage", "high_intent")
+    allowed = ("contact_name", "phone", "country", "company", "source", "note", "stage", "high_intent")
     sets, values = [], []
     for key in allowed:
         if key in fields:
@@ -255,6 +266,19 @@ def transfer_customer(customer_id, new_owner_id, viewer_id, is_admin=False):
             "UPDATE customers SET owner_id = %s, updated_at = %s"
             " WHERE id = %s AND (%s OR owner_id = %s)",
             (new_owner_id, _now(), customer_id, is_admin, viewer_id),
+        )
+        return cur.rowcount > 0
+
+
+def delete_customer(customer_id, viewer_id, is_admin=False):
+    """删客户（连同它的跟进记录——外键上是 ON DELETE CASCADE）。
+
+    权限条件同样写在 SQL 里：删别人的客户会命中 0 行，返回 False。
+    """
+    with pool.connection() as conn:
+        cur = conn.execute(
+            "DELETE FROM customers WHERE id = %s AND (%s OR owner_id = %s)",
+            (customer_id, is_admin, viewer_id),
         )
         return cur.rowcount > 0
 

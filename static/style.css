@@ -24,6 +24,12 @@
   --danger: #dc2626; --danger-soft: #fef2f2;
   --src-ink: #4338ca; --src-soft: #eef2ff; --src-line: #e0e7ff;
 
+  /* 顶栏（深色品牌带） */
+  --appbar:     #0f172a;
+  --appbar-2:   #1e293b;
+  --appbar-ink: #e2e8f0;
+  --appbar-dim: #94a3b8;
+
   /* 间距刻度：4 的倍数，别再随手写 margin */
   --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px;
 
@@ -118,15 +124,36 @@ pre {
   color: var(--text-2);
 }
 
-/* ---------------- 顶栏 ---------------- */
-.topbar {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: var(--sp-4); margin-bottom: var(--sp-5); flex-wrap: wrap;
+/* ---------------- 顶栏：深色品牌带 ----------------
+   作用有两个：给页面一个明确的"顶"，以及打破"整页一片浅灰"的单调。
+   宽度铺满、内容与 .wrap 对齐，滚动时也始终在。 */
+.appbar {
+  position: sticky; top: 0; z-index: 10;
+  background: linear-gradient(180deg, var(--appbar-2), var(--appbar));
+  border-bottom: 1px solid rgba(255, 255, 255, .06);
 }
-.topbar-right { display: flex; align-items: center; gap: var(--sp-3); }
-.topbar-right a { color: var(--text-3); font-size: var(--fs-2); text-decoration: none; }
-.topbar-right a:hover { color: var(--primary); }
-.who { font-size: var(--fs-2); color: var(--text-2); }
+.appbar-inner {
+  max-width: 1080px; margin: 0 auto;
+  padding: var(--sp-3) var(--sp-4);
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+.brand { color: #fff; font-size: var(--fs-4); font-weight: 700; letter-spacing: .01em; }
+.appbar-right { display: flex; align-items: center; gap: var(--sp-3); }
+.appbar-right a { color: var(--appbar-dim); font-size: var(--fs-2); text-decoration: none; }
+.appbar-right a:hover { color: #fff; }
+.who { font-size: var(--fs-2); color: var(--appbar-dim); }
+button.ghost-dark {
+  background: transparent; color: var(--appbar-ink);
+  border: 1px solid rgba(255, 255, 255, .22);
+}
+button.ghost-dark:hover { background: rgba(255, 255, 255, .08); color: #fff; filter: none; }
+
+/* 详情标题行 */
+.head-row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); }
+.head-actions { display: flex; gap: var(--sp-2); flex: 0 0 auto; }
+button.danger { color: var(--danger); border-color: #fecaca; }
+button.danger:hover { background: var(--danger-soft); color: var(--danger); filter: none; }
 
 /* ---------------- 统计条（看板风的主角） ---------------- */
 .stats {
@@ -136,12 +163,22 @@ pre {
   margin-bottom: var(--sp-4);
 }
 .stat {
+  position: relative;
+  overflow: hidden;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-3);
-  padding: var(--sp-4);
+  padding: var(--sp-4) var(--sp-4) var(--sp-4) calc(var(--sp-4) + 6px);
   box-shadow: var(--sh-1);
 }
+/* 左侧一条细色条：指示这张卡属于哪一类。数据看板常用的克制手法 */
+.stat::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: var(--border-strong);
+}
+.stat.brand::before { background: var(--primary); }
+.stat.warn::before { background: var(--warn); }
+.stat.ok::before { background: var(--ok); }
 .stat-num {
   font-size: var(--fs-6); font-weight: 700; line-height: 1.15;
   letter-spacing: -.02em; font-variant-numeric: tabular-nums;

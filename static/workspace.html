@@ -7,16 +7,18 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<main class="wrap">
-  <header class="topbar">
-    <h1>外贸客户工作台</h1>
-    <div class="topbar-right">
-      <a href="/">背调工具 ↗</a>
+<header class="appbar">
+  <div class="appbar-inner">
+    <span class="brand">外贸客户工作台</span>
+    <div class="appbar-right">
+      <a href="/">背调工具</a>
       <span id="whoami" class="who"></span>
-      <button id="logout" class="ghost" hidden>退出</button>
+      <button id="logout" class="ghost-dark" hidden>退出</button>
     </div>
-  </header>
+  </div>
+</header>
 
+<main class="wrap">
   <!-- ============ 未登录 ============ -->
   <section id="loginCard" class="card auth-card" hidden>
     <h2 id="authTitle">登录</h2>
@@ -37,7 +39,12 @@
 
     <section class="card">
       <div class="newrow">
-        <input id="newCompany" type="text" placeholder="公司名（必填）">
+        <input id="newName" type="text" placeholder="客户姓名（必填）">
+        <input id="newPhone" type="text" placeholder="号码（必填）">
+        <input id="newCountry" type="text" placeholder="国家（必填）">
+      </div>
+      <div class="newrow">
+        <input id="newCompany" type="text" placeholder="公司名（选填）">
         <input id="newSource" type="text" placeholder="来源：FB / 邮件 / 展会…">
         <input id="newNote" type="text" placeholder="一句话备注">
         <button id="createCustomer">建档</button>
@@ -55,7 +62,13 @@
         <p id="detailEmpty" class="hint">← 左边点一个客户</p>
         <div id="detail" hidden>
           <div class="detail-head">
-            <h2 id="dCompany"></h2>
+            <div class="head-row">
+              <h2 id="dTitle"></h2>
+              <div class="head-actions">
+                <button id="toggleHot" class="ghost">标记高意向</button>
+                <button id="deleteCustomer" class="ghost danger">删除</button>
+              </div>
+            </div>
             <p id="dMeta" class="hint"></p>
           </div>
           <div class="newrow">

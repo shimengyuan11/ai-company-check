@@ -39,6 +39,8 @@ async function api(path, options = {}) {
 }
 
 const setText = (el, t) => { el.textContent = t || ""; };
+// 客户在界面上怎么称呼：优先姓名，没姓名就退到公司名
+const titleOf = (c) => c.contact_name || c.company || "（未填姓名）";
 
 // ---------- 登录 / 注册 ----------
 
@@ -71,7 +73,7 @@ function showApp(user) {
   $("app").hidden = false;
   $("logout").hidden = false;
   setText($("whoami"), user.display_name + (user.is_admin ? "（管理员）" : ""));
-  $("newCompany").focus();
+  $("newName").focus();
   loadCustomers();
 }
 
@@ -81,9 +83,7 @@ async function submitAuth() {
   const code = $("code").value.trim();
   if (!username || !password) return setText($("authMsg"), "用户名和密码都要填");
   try {
-    const body = registerMode
-      ? { username, password, code }
-      : { username, password };
+    const body = registerMode ? { username, password, code } : { username, password };
     const data = await api(registerMode ? "/api/register" : "/api/login", {
       method: "POST",
       body: JSON.stringify(body),
@@ -138,7 +138,7 @@ async function loadCustomers() {
     if (!data.items.length) {
       const li = document.createElement("li");
       li.className = "hint";
-      li.textContent = "还没有客户，上面填个公司名就能建。";
+      li.textContent = "还没有客户，上面填姓名 / 号码 / 国家 就能建。";
       list.appendChild(li);
       return;
     }
@@ -149,9 +149,11 @@ async function loadCustomers() {
       const tags = [];
       if (c.source) tags.push('<span class="tag src">' + escapeHtml(c.source) + "</span>");
       if (c.high_intent) tags.push('<span class="tag hot">高意向</span>');
+      const sub = [c.company, c.country].filter(Boolean).join(" · ");
       li.innerHTML =
-        '<div class="cust-name">' + escapeHtml(c.company) + "</div>" +
+        '<div class="cust-name">' + escapeHtml(titleOf(c)) + "</div>" +
         '<div class="cust-meta">' + tags.join("") +
+        (sub ? "<span>" + escapeHtml(sub) + "</span>" : "") +
         "<span>跟进 " + c.followup_count + " 条</span></div>";
       li.addEventListener("click", () => openCustomer(c.id));
       list.appendChild(li);
@@ -161,23 +163,25 @@ async function loadCustomers() {
   }
 }
 
+const NEW_FIELDS = ["newName", "newPhone", "newCountry", "newCompany", "newSource", "newNote"];
+
 async function createCustomer() {
-  const company = $("newCompany").value.trim();
-  if (!company) return setText($("appMsg"), "公司名必填");
+  const body = {
+    contact_name: $("newName").value.trim(),
+    phone: $("newPhone").value.trim(),
+    country: $("newCountry").value.trim(),
+    company: $("newCompany").value.trim(),
+    source: $("newSource").value.trim(),
+    note: $("newNote").value.trim(),
+  };
+  if (!body.contact_name || !body.phone || !body.country) {
+    return setText($("appMsg"), "姓名、号码、国家 三个都要填");
+  }
   try {
-    const c = await api("/api/customers", {
-      method: "POST",
-      body: JSON.stringify({
-        company,
-        source: $("newSource").value.trim(),
-        note: $("newNote").value.trim(),
-      }),
-    });
-    $("newCompany").value = "";
-    $("newSource").value = "";
-    $("newNote").value = "";
-    setText($("appMsg"), "已建档：" + c.company);
-    $("newCompany").focus();
+    const c = await api("/api/customers", { method: "POST", body: JSON.stringify(body) });
+    for (const id of NEW_FIELDS) $(id).value = "";
+    setText($("appMsg"), "已建档：" + titleOf(c));
+    $("newName").focus();
     await loadCustomers();
     openCustomer(c.id);
   } catch (err) {
@@ -185,7 +189,7 @@ async function createCustomer() {
   }
 }
 
-// ---------- 客户详情 + 跟进 + 移交 ----------
+// ---------- 客户详情 / 跟进 / 移交 / 删除 ----------
 
 async function openCustomer(id) {
   try {
@@ -193,18 +197,19 @@ async function openCustomer(id) {
     CURRENT = id;
     $("detailEmpty").hidden = true;
     $("detail").hidden = false;
-    setText($("dCompany"), c.company);
-    const meta = [];
-    if (c.source) meta.push("来源：" + c.source);
-    if (c.country) meta.push("国家：" + c.country);
-    if (c.stage) meta.push("阶段：" + c.stage);
-    if (c.note) meta.push(c.note);
-    meta.push("建档于 " + formatTime(c.created_at));
-    setText($("dMeta"), meta.join(" ｜ "));
+    setText($("dTitle"), titleOf(c));
+    const bits = [];
+    if (c.company) bits.push("公司：" + c.company);
+    if (c.phone) bits.push("号码：" + c.phone);
+    if (c.country) bits.push("国家：" + c.country);
+    if (c.source) bits.push("来源：" + c.source);
+    if (c.note) bits.push(c.note);
+    bits.push("建档于 " + formatTime(c.created_at));
+    setText($("dMeta"), bits.join(" ｜ "));
+    setText($("toggleHot"), c.high_intent ? "取消高意向" : "标记高意向");
     $("fuContent").focus();
     await loadFollowups(id);
     await loadTransferOptions();
-    // 刷新列表里的高亮
     document.querySelectorAll(".cust-item").forEach((el) => {
       el.classList.toggle("active", Number(el.dataset.id) === id);
     });
@@ -280,13 +285,45 @@ async function doTransfer() {
       body: JSON.stringify({ to_user_id: to }),
     });
     setText($("appMsg"), "已转出。");
-    CURRENT = null;
-    $("detail").hidden = true;
-    $("detailEmpty").hidden = false;
+    closeDetail();
     await loadCustomers();
   } catch (err) {
     setText($("appMsg"), err.message);
   }
+}
+
+async function toggleHot() {
+  if (!CURRENT) return;
+  try {
+    const c = await api("/api/customers/" + CURRENT);
+    await api("/api/customers/" + CURRENT, {
+      method: "PATCH",
+      body: JSON.stringify({ high_intent: !c.high_intent }),
+    });
+    await openCustomer(CURRENT);
+    await loadCustomers();
+  } catch (err) {
+    setText($("appMsg"), err.message);
+  }
+}
+
+async function deleteCustomer() {
+  if (!CURRENT) return;
+  if (!confirm("确定删掉这个客户？它下面的跟进记录会一起没，而且不能恢复。")) return;
+  try {
+    await api("/api/customers/" + CURRENT, { method: "DELETE" });
+    setText($("appMsg"), "已删除。");
+    closeDetail();
+    await loadCustomers();
+  } catch (err) {
+    setText($("appMsg"), err.message);
+  }
+}
+
+function closeDetail() {
+  CURRENT = null;
+  $("detail").hidden = true;
+  $("detailEmpty").hidden = false;
 }
 
 // ---------- 入口 ----------
@@ -303,8 +340,8 @@ function bind() {
   $("logout").addEventListener("click", logout);
 
   $("createCustomer").addEventListener("click", createCustomer);
-  // 「建档 ≤30 秒」：三个框都能回车提交，手不用离开键盘
-  for (const id of ["newCompany", "newSource", "newNote"]) {
+  // 「建档 ≤30 秒」：每个框都能回车提交，手不用离开键盘
+  for (const id of NEW_FIELDS) {
     $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") createCustomer(); });
   }
 
@@ -312,6 +349,8 @@ function bind() {
   // 「写跟进 ≤10 秒」：一个框，回车就存
   $("fuContent").addEventListener("keydown", (e) => { if (e.key === "Enter") addFollowup(); });
   $("doTransfer").addEventListener("click", doTransfer);
+  $("toggleHot").addEventListener("click", toggleHot);
+  $("deleteCustomer").addEventListener("click", deleteCustomer);
 }
 
 async function boot() {

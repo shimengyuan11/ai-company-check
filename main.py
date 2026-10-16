@@ -147,16 +147,23 @@ def api_signup_status():
 
 
 class CustomerRequest(BaseModel):
-    company: str
+    """建档。姓名 / 号码 / 国家 必填，公司名选填（号码是以后查重/防撞单的抓手）。"""
+
+    contact_name: str
+    phone: str
+    country: str
+    company: str = ""
     source: str = ""
     note: str = ""
 
 
 class CustomerPatch(BaseModel):
+    contact_name: str | None = None
+    phone: str | None = None
+    country: str | None = None
     company: str | None = None
     source: str | None = None
     note: str | None = None
-    country: str | None = None
     stage: str | None = None
     high_intent: bool | None = None
 
@@ -196,11 +203,34 @@ def api_list_customers(request: Request):
 @app.post("/api/customers")
 def api_create_customer(req: CustomerRequest, request: Request):
     user = auth.require_user(request)
-    company = req.company.strip()
-    if not company:
-        raise HTTPException(status_code=400, detail="公司名不能为空")
-    cid = db.create_customer(user["id"], company, req.source.strip(), req.note.strip())
+    values = {
+        "contact_name": req.contact_name.strip(),
+        "phone": req.phone.strip(),
+        "country": req.country.strip(),
+    }
+    # 必填在接口层强制——库里不加 NOT NULL，是为了让老数据能平滑升级（见 db.init_db 的注释）
+    if not all(values.values()):
+        raise HTTPException(status_code=400, detail="姓名、号码、国家 三个都要填")
+    cid = db.create_customer(
+        user["id"],
+        values["contact_name"],
+        values["phone"],
+        values["country"],
+        req.company.strip(),
+        req.source.strip(),
+        req.note.strip(),
+    )
     return db.get_customer(cid, user["id"], user["is_admin"])
+
+
+@app.delete("/api/customers/{customer_id}")
+def api_delete_customer(customer_id: int, request: Request):
+    """删客户（连同它的跟进记录）。"""
+    user = auth.require_user(request)
+    _visible_customer(customer_id, user)  # 看不到就不给删；404 也不泄露"存在"
+    if not db.delete_customer(customer_id, user["id"], user["is_admin"]):
+        raise HTTPException(status_code=404, detail="客户不存在")
+    return {"ok": True}
 
 
 @app.get("/api/customers/{customer_id}")
