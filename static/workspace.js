@@ -3,6 +3,7 @@
 
 const $ = (id) => document.getElementById(id);
 let CURRENT = null; // 当前打开的客户 id
+let SIGNUP_OPEN = true; // 注册是否开放（启动时问后端）
 
 // ---------- 小工具 ----------
 
@@ -48,7 +49,13 @@ function renderAuthMode() {
   $("submitAuth").textContent = registerMode ? "注册并进入" : "登录";
   $("toggleMode").textContent = registerMode ? "已有账号？去登录" : "没有账号？去注册";
   $("code").hidden = !registerMode;
-  setText($("authMsg"), "");
+  // 注册关着的时候直接把话说清楚，别让人填完一整个表单才吃一个 403
+  setText(
+    $("authMsg"),
+    registerMode && !SIGNUP_OPEN
+      ? "注册已关闭：需要管理员先在服务端配置 SIGNUP_CODE（邀请码）才能注册。"
+      : ""
+  );
 }
 
 function showLogin() {
@@ -283,8 +290,14 @@ function bind() {
 }
 
 async function boot() {
-  renderAuthMode();
   bind();
+  try {
+    const st = await api("/api/signup-status");
+    SIGNUP_OPEN = !!st.open;
+  } catch (_) {
+    /* 接口不可用就默认开着——真注册时后端还会再拦一道 */
+  }
+  renderAuthMode();
   try {
     const data = await api("/api/me");
     if (data.user) showApp(data.user);

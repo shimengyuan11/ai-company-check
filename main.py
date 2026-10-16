@@ -131,6 +131,16 @@ def api_me(request: Request):
     return {"user": auth.public_user(user) if user else None}
 
 
+@app.get("/api/signup-status")
+def api_signup_status():
+    """注册现在是开是关？
+
+    公开信息，不泄露邀请码本身。存在的理由：**光看 403 分不清"没配邀请码"还是"填错了"**，
+    前端拿到这个就能把话说清楚；运维/排查时也能一眼看出线上到底配没配。
+    """
+    return {"open": bool(auth.SIGNUP_CODE)}
+
+
 # ==================================================================
 # V2：客户 / 跟进 / 移交
 # ==================================================================
