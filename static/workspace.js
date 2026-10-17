@@ -609,6 +609,10 @@ function switchView(name) {
   document.querySelectorAll(".nav-item[data-view]").forEach((el) => {
     el.classList.toggle("active", el.dataset.view === name);
   });
+  if (name === "customers") {
+    // 从话术库/别处切回来时，生成下拉可能已经有新模板了
+    if (CURRENT) loadGenTemplates();
+  }
   if (name === "products") loadProducts();
   if (name === "templates") {
     loadTags();
@@ -1138,6 +1142,7 @@ async function saveTemplate() {
     }
     cancelEditTemplate();
     await loadTemplates();
+    syncGenTemplates(); // 客户详情里那个下拉要立刻能选到新模板
   } catch (err) {
     setText($("tplMsg"), err.message);
   }
@@ -1150,6 +1155,7 @@ async function deleteTemplate(id, title) {
     setText($("tplMsg"), "已删除。");
     if (TPL_EDIT_ID === id) cancelEditTemplate();
     await loadTemplates();
+    syncGenTemplates();
   } catch (err) {
     setText($("tplMsg"), err.message);
   }
@@ -1192,7 +1198,7 @@ async function loadGenTemplates() {
     sel.innerHTML = "";
     const none = document.createElement("option");
     none.value = "";
-    none.textContent = "不用模板（直接按客户写）";
+    none.textContent = "不用模板 · 直接按客户生成新的";
     sel.appendChild(none);
     for (const t of data.items) {
       const o = document.createElement("option");
@@ -1203,6 +1209,11 @@ async function loadGenTemplates() {
   } catch (_) {
     /* 模板取不到也能直接按客户生成 */
   }
+}
+
+// 话术库那边一存/一删，客户详情的下拉立刻跟着变——不用重新打开客户
+function syncGenTemplates() {
+  if ($("genTemplate")) loadGenTemplates();
 }
 
 async function loadGenerations(id) {
@@ -1251,9 +1262,11 @@ async function doGenerate() {
     const parts = ["客户资料"];
     parts.push(b.followups ? b.followups + " 条跟进" : "还没有跟进记录");
     if (b.template) parts.push("模板「" + b.template + "」");
+    const thin =
+      b.reliable === false ? "。⚠ 跟进不足 2 条，草稿会比较泛，建议先补两条跟进再生成" : "";
     setText(
       $("genMsg"),
-      "已生成（" + d.model + "）。依据：" + parts.join(" + ") + "。改完再复制——AI 出草稿，人负责。"
+      "已生成（" + d.model + "）。依据：" + parts.join(" + ") + thin + "。改完再复制——AI 出草稿，人负责。"
     );
     await loadGenerations(CURRENT);
     await loadCustomers(); // 模板的使用次数变了，列表上的「用过 N 次」要跟上

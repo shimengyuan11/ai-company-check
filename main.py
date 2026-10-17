@@ -14,7 +14,7 @@ from starlette.middleware.sessions import SessionMiddleware
 import auth
 import db
 from db import get_analysis, init_db, list_history, save_analysis
-from llm import MODEL, analyze_company, generate_pitch
+from llm import MODEL, PITCH_MODEL, analyze_company, generate_pitch
 
 BASE_DIR = Path(__file__).parent  # 项目根目录；拼路径都用它
 
@@ -605,6 +605,10 @@ def api_delete_template(template_id: int, request: Request):
 
 # ---- 按客户生成话术（AI 出草稿，人过一遍再发） ----
 
+# 每人每天的生成上限。这是真金白银的调用，得有个闸——
+# 没有闸就只能靠自觉，站一旦放给同事，账单是不会有上限的。
+LLM_DAILY_LIMIT = int(os.environ.get("LLM_DAILY_LIMIT", "100"))
+
 
 class GenerateRequest(BaseModel):
     template_id: int | None = None
@@ -619,6 +623,16 @@ def api_generate(customer_id: int, req: GenerateRequest, request: Request):
     """
     user = auth.require_user(request)
     customer = _visible_customer(customer_id, user)  # 看不到这个客户就别想生成
+    # 每日限额：先算今天已经用掉几次，到顶就不调模型了（省钱也省得白等）
+    day_start = dt.datetime.now(dt.timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    used = db.count_generations_since(user["id"], day_start.isoformat(timespec="seconds"))
+    if used >= LLM_DAILY_LIMIT:
+        raise HTTPException(
+            status_code=429,
+            detail=f"今天已经生成 {used} 次，到上限了（每人每天 {LLM_DAILY_LIMIT} 次）。",
+        )
     template = None
     if req.template_id:
         template = db.get_template(req.template_id)
@@ -642,19 +656,21 @@ def api_generate(customer_id: int, req: GenerateRequest, request: Request):
         raise HTTPException(status_code=502, detail="模型没有返回内容，再试一次")
 
     gid = db.add_generation(
-        customer_id, req.template_id, user["id"], req.request.strip(), text, MODEL
+        customer_id, req.template_id, user["id"], req.request.strip(), text, PITCH_MODEL
     )
     if template:
         db.bump_template_use(template["id"])
     return {
         "id": gid,
         "output": text,
-        "model": MODEL,
+        "model": PITCH_MODEL,
         "template_title": template["title"] if template else None,
         # 把「依据什么生成的」回给前端——业务能核对，AI 也就不再是黑箱
         "basis": {
             "customer": customer.get("contact_name") or "",
             "followups": len(recent),
+            # 少于 2 条跟进时，草稿的依据其实很薄——前端要显式提醒业务
+            "reliable": len(recent) >= 2,
             "template": template["title"] if template else None,
         },
     }

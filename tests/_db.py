@@ -37,6 +37,7 @@ _sep = "&" if "?" in DIRECT_URL else "?"
 os.environ["DATABASE_URL"] = f"{DIRECT_URL}{_sep}options=-c%20search_path%3D{SCHEMA}"
 os.environ["SIGNUP_CODE"] = "testcode"  # 注册需要邀请码；测试里给一个固定值
 os.environ["SESSION_SECRET"] = "test-secret"
+os.environ["LLM_DAILY_LIMIT"] = "5"  # 每日生成限额：测试里给小值，好验证 429
 
 import psycopg  # noqa: E402
 

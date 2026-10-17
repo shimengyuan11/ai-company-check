@@ -17,6 +17,12 @@ missing = [name for name, value in [
 if missing:
     raise RuntimeError("缺少配置：" + "、".join(missing) + "（请看项目目录下的 .env 文件）")
 
+# 话术生成可以**单独指一个模型**（比如更便宜的 / 免费渠道），不填就沿用上面那套。
+# 拆开的原因：背调是一次性重活，话术是天天用的轻活，两者的性价比考虑不一样。
+PITCH_BASE_URL = os.environ.get("PITCH_LLM_BASE_URL") or BASE_URL
+PITCH_API_KEY = os.environ.get("PITCH_LLM_API_KEY") or API_KEY
+PITCH_MODEL = os.environ.get("PITCH_LLM_MODEL") or MODEL
+
 SYSTEM_PROMPT = """你是给外贸 / BD / 销售用的公司背景调查助手。
 用户会给你一个公司名，可能附带补充信息。请输出一份简明背调报告。
 
@@ -65,8 +71,8 @@ PITCH_PROMPT = """你是外贸业务的写作助手。用户会给你一段客�
 硬性要求：
 1. **不能编造**客户信息里没有的东西：价格、数量、交期、型号一律不要自己造；
    需要这些信息时，写成问题去问对方。
-2. 语言：目标国家是英语区（US/UK/AU/CA 等）或不确定时用英文；中国大陆客户用中文。
-   其他国家默认英文。
+2. 语言：**一律用中文写**——语言种类太多，统一中文最省事。
+   如果用户在「这次想达成」里明确指定了别的语言（例如「用英文回复」），就按他说的来。
 3. 简短：不超过 120 词。开门见山，不要「希望您一切都好」这类空话堆砌。
 4. 不要出现「作为 AI」「根据您提供的信息」这类措辞。
 5. 结尾必须给一个明确的下一步（回邮件确认 / 约时间 / 确认数量）。
@@ -114,10 +120,10 @@ def generate_pitch(
         user_content += "\n\n这次想达成：\n" + request.strip()
 
     response = httpx.post(
-        f"{BASE_URL}/chat/completions",
-        headers={"Authorization": f"Bearer {API_KEY}"},
+        f"{PITCH_BASE_URL}/chat/completions",
+        headers={"Authorization": f"Bearer {PITCH_API_KEY}"},
         json={
-            "model": MODEL,
+            "model": PITCH_MODEL,
             "messages": [
                 {"role": "system", "content": PITCH_PROMPT},
                 {"role": "user", "content": user_content},

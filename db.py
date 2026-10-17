@@ -1056,3 +1056,16 @@ def list_generations(customer_id):
             """,
             (customer_id,),
         ).fetchall()
+
+
+def count_generations_since(user_id, since_iso):
+    """某人从某个时间点起生成了几次——用来卡每日限额。
+
+    created_at 存的是同格式 UTC 字符串，直接比字符串就等价于比时间。
+    """
+    with pool.connection() as conn:
+        row = conn.execute(
+            "SELECT count(*) AS n FROM generations WHERE user_id = %s AND created_at >= %s",
+            (user_id, since_iso),
+        ).fetchone()
+    return row["n"]

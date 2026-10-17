@@ -97,6 +97,27 @@
   会被 302 到 `/login`，探针于是永远等不到 `#nav`。做法：`await fetch("/api/login")` 之后再用 JS 创建 iframe
 - 部署前：新开空白 venv 只按 `requirements.txt` 装再启动一次（漏依赖会让线上直接挂，踩过）
 
+## 切换模型 / 换渠道（2026-10-17）
+
+背调和话术可以**用不同模型**——它们是两种性质的活：背调是一次性重活，话术是天天用的轻活。
+
+| 用途 | 环境变量 | 说明 |
+|---|---|---|
+| 背调（V1） | `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | 必填，缺一个就拒绝启动 |
+| 话术生成 | `PITCH_LLM_BASE_URL` / `PITCH_LLM_API_KEY` / `PITCH_LLM_MODEL` | 可选，**不填就沿用上面那套** |
+
+只想把话术换到别的渠道，改 `PITCH_*` 三项即可，背调页不受影响。接口只要兼容 OpenAI 的
+`/chat/completions` 就能用（DeepSeek / OpenRouter / SiliconFlow / 本地 vLLM 都行）。
+本地改 `.env`，线上改 Render 的 Environment 变量——**改完要重新部署/Restart 才生效**。
+
+**关于「DeepSeek 免费 API」**：官方 API **没有持续免费档**——新用户给 5M token 试用额度，
+用完即按量计费（网页和 App 免费，API 不免费）。所谓「免费 DeepSeek」通常是第三方聚合平台的
+`:free` 变体（如 OpenRouter），有速率限制、要另申请 key，稳定性也不如官方。想省钱更实际的是：
+① 给 `PITCH_LLM_MODEL` 配一个便宜模型；② 用下面的每日上限卡住用量。
+
+**每日生成上限**：`LLM_DAILY_LIMIT`（默认 100，按人按天算）。到顶返回 429，不会悄悄烧钱。
+话术生成**默认输出中文**——语言种类太多，统一中文最省事；要别的语言，在「想达成什么」里写明。
+
 ## 静态文件的缓存（2026-10-17 踩过两次，都治了）
 
 **第一次**：线上部署成功、`/login` 都已是新版，用户刷新工作台却还是旧界面。
