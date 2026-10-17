@@ -946,11 +946,24 @@ NO_CACHE = {"Cache-Control": "no-cache"}
 
 
 class NoCacheStaticFiles(StaticFiles):
-    """给 /static 下的文件补上 Cache-Control: no-cache。"""
+    """静态资源的缓存策略——**分两种**，这是性能关键。
+
+    - URL 里带 `?v=<文件修改时间>`（页面自动加的指纹）→ 长期缓存 immutable：
+      文件一变 URL 就变，所以可以放心让浏览器一年不再问。
+    - 没带指纹（直接访问 /static/xxx）→ no-cache，每次回来验一次。
+
+    为什么非分不可：一开始为了修"改了看不到"全站 no-cache，代价是每次刷新都重新
+    下载 workspace.js(61KB) + style.css(40KB)——跨境实测 0.76s / 0.96s，
+    这才是"刷新慢"的主因，不是数据库。
+    """
 
     async def get_response(self, path, scope):
         response = await super().get_response(path, scope)
-        response.headers["Cache-Control"] = "no-cache"
+        query = (scope.get("query_string") or b"").decode("latin-1")
+        if "v=" in query:
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            response.headers["Cache-Control"] = "no-cache"
         return response
 
 

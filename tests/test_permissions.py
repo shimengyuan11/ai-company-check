@@ -189,6 +189,18 @@ class PermissionTest(unittest.TestCase):
         self.assertEqual(self.a_c.get("/app").headers.get("cache-control"), "no-cache")
         self.assertEqual(_client().get("/login").headers.get("cache-control"), "no-cache")
 
+    def test_versioned_static_is_long_cached(self):
+        """带 ?v= 指纹的静态资源必须长期缓存——否则每次刷新重下 100KB（跨境实测 1.7s）。"""
+        r = self.a_c.get("/static/workspace.js?v=12345")
+        cc = r.headers.get("cache-control", "")
+        self.assertIn("immutable", cc)
+        self.assertIn("max-age=31536000", cc)
+
+    def test_unversioned_static_stays_no_cache(self):
+        """不带指纹的直接访问仍然 no-cache，避免改完看不到。"""
+        r = self.a_c.get("/static/workspace.js")
+        self.assertEqual(r.headers.get("cache-control"), "no-cache")
+
     def test_assets_are_versioned(self):
         """页面引用的 JS/CSS 必须带 ?v=——否则浏览器手里的旧缓存条目会一直用旧脚本。
 

@@ -910,3 +910,63 @@ button:not(.ghost):not(.tag-chip):not(.nav-item):not(.cal-cell):active { transfo
 @media (min-width: 1181px) {
   .auth-main { padding-right: 360px; }
 }
+
+/* ============================================================
+   SMY 连写 logo + 同心光环（替换掉那个不像样的地球）
+   ============================================================ */
+.auth-logo {
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 42px; font-weight: 900; line-height: 1;
+  letter-spacing: -.14em;                    /* 三个字母紧贴成一组 */
+  padding-right: .12em;                      /* 补偿负字距把右侧裁掉 */
+  margin-bottom: var(--sp-4);
+  background: linear-gradient(135deg, #ffffff 0%, #93c5fd 48%, #22d3ee 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 8px 22px rgba(59, 130, 246, .45));
+}
+
+.auth-orbit {
+  position: absolute; right: 5vw; top: 50%; transform: translateY(-50%);
+  width: 340px; height: 340px; pointer-events: none; z-index: 0;
+}
+.ring {
+  position: absolute; left: 50%; top: 50%; border-radius: 50%;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(96, 165, 250, .22);
+}
+.ring-1 {
+  width: 120px; height: 120px; border-color: rgba(96, 165, 250, .38);
+  box-shadow: inset 0 0 34px rgba(59, 130, 246, .22);
+}
+.ring-2 { width: 220px; height: 220px; border-style: dashed; border-color: rgba(96, 165, 250, .18); }
+.ring-3 { width: 320px; height: 320px; border-color: rgba(34, 211, 238, .14); }
+
+.core-glow {
+  position: absolute; left: 50%; top: 50%; width: 58px; height: 58px;
+  transform: translate(-50%, -50%); border-radius: 50%;
+  background: radial-gradient(circle, rgba(147, 197, 253, .95), rgba(37, 99, 235, .28) 58%, transparent 72%);
+  filter: blur(2px);
+  animation: core-pulse 4s ease-in-out infinite;
+}
+.spinner {
+  position: absolute; left: 50%; top: 50%; border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+.spin-1 { width: 120px; height: 120px; animation: ring-spin 8s linear infinite; }
+.spin-2 { width: 220px; height: 220px; animation: ring-spin 14s linear infinite reverse; }
+.spin-3 { width: 320px; height: 320px; animation: ring-spin 22s linear infinite; }
+.spinner i {
+  position: absolute; left: 50%; top: -3px; width: 6px; height: 6px; margin-left: -3px;
+  border-radius: 50%; background: #93c5fd;
+  box-shadow: 0 0 10px 2px rgba(147, 197, 253, .85);
+}
+.spin-2 i { background: #22d3ee; box-shadow: 0 0 10px 2px rgba(34, 211, 238, .85); }
+.spin-3 i { background: #a78bfa; box-shadow: 0 0 9px 2px rgba(167, 139, 250, .85); width: 5px; height: 5px; }
+
+@keyframes ring-spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
+@keyframes core-pulse {
+  0%, 100% { opacity: .72; transform: translate(-50%, -50%) scale(.92); }
+  50% { opacity: 1; transform: translate(-50%, -50%) scale(1.07); }
+}
+@media (max-width: 1180px) { .auth-orbit { display: none; } }
+@media (prefers-reduced-motion: reduce) { .spinner, .core-glow { animation: none !important; } }
