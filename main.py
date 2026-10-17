@@ -576,6 +576,20 @@ def api_list_generations(customer_id: int, request: Request):
 # 页面
 # ==================================================================
 
+# 静态文件和页面一律「每次都回来验一次」（ETag 没变就 304，代价很小）。
+# 不这么做的后果是真实踩过的：前端改完、部署也成功，用户刷新还是旧界面——
+# 浏览器对没有 Cache-Control 的响应会做启发式缓存。宁多一次 304，也要「刷新即见」。
+NO_CACHE = {"Cache-Control": "no-cache"}
+
+
+class NoCacheStaticFiles(StaticFiles):
+    """给 /static 下的文件补上 Cache-Control: no-cache。"""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
 
 @app.get("/")
 def index():
@@ -586,7 +600,7 @@ def index():
 @app.get("/login")
 def login_page():
     """独立登录页。未登录的 /app 会被送到这里，登录成功再跳回去。"""
-    return FileResponse(BASE_DIR / "static" / "login.html")
+    return FileResponse(BASE_DIR / "static" / "login.html", headers=NO_CACHE)
 
 
 @app.get("/app")
@@ -598,7 +612,7 @@ def workspace(request: Request):
     """
     if auth.current_user(request) is None:
         return RedirectResponse("/login?next=/app", status_code=302)
-    return FileResponse(BASE_DIR / "static" / "workspace.html")
+    return FileResponse(BASE_DIR / "static" / "workspace.html", headers=NO_CACHE)
 
 
-app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+app.mount("/static", NoCacheStaticFiles(directory=BASE_DIR / "static"), name="static")

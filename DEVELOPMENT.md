@@ -76,6 +76,18 @@
   会被 302 到 `/login`，探针于是永远等不到 `#nav`。做法：`await fetch("/api/login")` 之后再用 JS 创建 iframe
 - 部署前：新开空白 venv 只按 `requirements.txt` 装再启动一次（漏依赖会让线上直接挂，踩过）
 
+## 静态文件的缓存（2026-10-17 踩过，已治）
+
+线上部署成功、`/login` 都已经是新版了，用户刷新工作台却还是**旧界面**：
+`StaticFiles` 默认不发 `Cache-Control`，浏览器对这类响应做启发式缓存，把旧 HTML / JS 存住。
+
+现在 `main.py` 里用 `NoCacheStaticFiles` 给 `/static/*` 统一加 `Cache-Control: no-cache`，
+`/app`、`/login` 的 `FileResponse` 也带同一个头。浏览器每次回来验一次，文件没变就 304，
+代价可以忽略，换来的是「部署完刷新即见」。
+
+自查办法：`curl -s -o /dev/null -D - <地址>/static/workspace.js | grep -i cache-control`
+应该看到 `cache-control: no-cache`。
+
 ## 数据层迁移：已完成（2026-10-16）
 
 数据层从 SQLite 换成了**托管 Postgres（Neon 免费层）**，线上已实测验证：

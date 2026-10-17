@@ -160,6 +160,18 @@ class PermissionTest(unittest.TestCase):
         # 登录之后能进
         self.assertEqual(self.a_c.get("/app").status_code, 200)
 
+    def test_pages_and_static_are_not_cached(self):
+        """静态文件和页面都必须带 no-cache。
+
+        没有它踩过的坑：前端改完、部署也成功，用户刷新还是旧界面——
+        浏览器对没有 Cache-Control 的响应会做启发式缓存。
+        """
+        self.assertEqual(
+            self.a_c.get("/static/workspace.js").headers.get("cache-control"), "no-cache"
+        )
+        self.assertEqual(self.a_c.get("/app").headers.get("cache-control"), "no-cache")
+        self.assertEqual(_client().get("/login").headers.get("cache-control"), "no-cache")
+
     # ---------- 规则 2：管理员看得到全部 ----------
 
     def test_admin_sees_everyones_customers(self):
