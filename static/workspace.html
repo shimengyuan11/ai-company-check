@@ -79,12 +79,31 @@
                 <div class="head-row">
                   <h2 id="dTitle"></h2>
                   <div class="head-actions">
+                    <button id="editCustomer" class="ghost">编辑资料</button>
                     <button id="toggleHot" class="ghost">标记高意向</button>
                     <button id="deleteCustomer" class="ghost danger">删除</button>
                   </div>
                 </div>
                 <p id="dMeta" class="hint"></p>
                 <p id="dContact" class="contact-line"></p>
+
+                <div id="dEdit" class="detail-edit" hidden>
+                  <div class="newrow">
+                    <input id="eName" type="text" placeholder="姓名（必填）">
+                    <input id="ePhone" type="text" placeholder="号码（必填）">
+                    <input id="eCountry" type="text" placeholder="国家（必填）">
+                  </div>
+                  <div class="newrow">
+                    <input id="eCompany" type="text" placeholder="公司名">
+                    <input id="eSource" type="text" placeholder="来源">
+                    <input id="eNote" type="text" placeholder="备注">
+                  </div>
+                  <div class="newrow">
+                    <button id="saveCustomer" type="button">保存</button>
+                    <button id="cancelCustomer" type="button" class="ghost">取消</button>
+                  </div>
+                  <p id="editMsg" class="status"></p>
+                </div>
                 <div class="stage-row">
                   <label class="stage-label" for="dStage">阶段</label>
                   <select id="dStage" aria-label="客户阶段"></select>

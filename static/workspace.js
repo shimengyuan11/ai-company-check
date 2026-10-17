@@ -11,6 +11,7 @@ const BUILD = (() => {
 
 const $ = (id) => document.getElementById(id);
 let CURRENT = null; // 当前打开的客户 id
+let CURRENT_DATA = null; // 当前客户的完整数据（编辑资料时回填用）
 let SEARCH = ""; // 当前搜索词
 let STAGE_FILTER = ""; // 阶段筛选："" = 全部，"none" = 未分组，其余为具体阶段
 let IDLE_DAYS = ""; // 未联系天数筛选："" = 全部，其余是 3 / 5 / 7 / 10
@@ -286,8 +287,12 @@ async function openCustomer(id) {
   try {
     const c = await api("/api/customers/" + id);
     CURRENT = id;
+    CURRENT_DATA = c;
     $("detailEmpty").hidden = true;
     $("detail").hidden = false;
+    // 每次打开都退出「编辑资料」态，免得串到上一个客户
+    $("dEdit").hidden = true;
+    $("dMeta").hidden = false;
     setText($("dTitle"), titleOf(c));
     const bits = [];
     if (c.company) bits.push("公司：" + c.company);
@@ -484,6 +489,57 @@ async function changeStage() {
     await loadCustomers();
   } catch (err) {
     setText($("appMsg"), err.message);
+  }
+}
+
+// ---- 编辑客户资料：填错了/有新信息，就地改，不用删了重建 ----
+
+function startEditCustomer() {
+  if (!CURRENT_DATA) return;
+  const c = CURRENT_DATA;
+  $("eName").value = c.contact_name || "";
+  $("ePhone").value = c.phone || "";
+  $("eCountry").value = c.country || "";
+  $("eCompany").value = c.company || "";
+  $("eSource").value = c.source || "";
+  $("eNote").value = c.note || "";
+  $("dEdit").hidden = false;
+  $("dMeta").hidden = true;
+  setText($("editMsg"), "");
+  $("eName").focus();
+}
+
+function cancelEditCustomer() {
+  $("dEdit").hidden = true;
+  $("dMeta").hidden = false;
+  setText($("editMsg"), "");
+}
+
+async function saveCustomerEdit() {
+  if (!CURRENT) return;
+  const payload = {
+    contact_name: $("eName").value.trim(),
+    phone: $("ePhone").value.trim(),
+    country: $("eCountry").value.trim(),
+    company: $("eCompany").value.trim(),
+    source: $("eSource").value.trim(),
+    note: $("eNote").value.trim(),
+  };
+  if (!payload.contact_name || !payload.phone || !payload.country) {
+    return setText($("editMsg"), "姓名、号码、国家 三个都要填");
+  }
+  try {
+    // 后端会顺手查重：号码改成别人已经建过的，会回 409
+    await api("/api/customers/" + CURRENT, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+    setText($("appMsg"), "客户资料已更新。");
+    cancelEditCustomer();
+    await openCustomer(CURRENT);
+    await loadCustomers();
+  } catch (err) {
+    setText($("editMsg"), err.message);
   }
 }
 
@@ -1474,6 +1530,11 @@ function bind() {
     loadCustomers();
   });
   $("dStage").addEventListener("change", changeStage);
+
+  // 编辑客户资料
+  $("editCustomer").addEventListener("click", startEditCustomer);
+  $("saveCustomer").addEventListener("click", saveCustomerEdit);
+  $("cancelCustomer").addEventListener("click", cancelEditCustomer);
 
   // 话术库
   $("saveTemplate").addEventListener("click", saveTemplate);
