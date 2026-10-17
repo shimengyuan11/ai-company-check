@@ -153,6 +153,46 @@ class PermissionTest(unittest.TestCase):
         )
         self.assertEqual(r.status_code, 401, "未登录不该建得下客户")
 
+    # ---------- 规则 5：阶段筛选 / 排序（也不能绕过归属） ----------
+
+    def test_stage_filter_scoped_to_owner(self):
+        c = _create(self.a_c, "吴十")
+        r = self.a_c.patch(f"/api/customers/{c['id']}", json={"stage": "已报价"})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self.a_c.get(f"/api/customers/{c['id']}").json()["stage"], "已报价")
+
+        mine = self.a_c.get("/api/customers", params={"stage": "已报价"}).json()["items"]
+        self.assertIn(c["id"], [x["id"] for x in mine])
+
+        others = self.b_c.get("/api/customers", params={"stage": "已报价"}).json()["items"]
+        self.assertEqual(others, [], "阶段筛选不能绕过「各管各的」")
+
+    def test_stage_none_and_stale_sort(self):
+        old = _create(self.a_c, "郑十一")
+        new = _create(self.a_c, "王十二")
+        self.a_c.post(f"/api/customers/{new['id']}/followups", json={"content": "刚聊过"})
+
+        # 两个都没标阶段 → stage=none 都能筛到
+        none_ids = [
+            x["id"]
+            for x in self.a_c.get("/api/customers", params={"stage": "none"}).json()["items"]
+        ]
+        self.assertIn(old["id"], none_ids)
+        self.assertIn(new["id"], none_ids)
+
+        # 最久没联系在前：从没跟进的 old 应排在刚跟进过的 new 前面
+        order = [
+            x["id"]
+            for x in self.a_c.get("/api/customers", params={"sort": "stale"}).json()["items"]
+        ]
+        self.assertLess(order.index(old["id"]), order.index(new["id"]))
+
+    def test_bad_stage_or_sort_is_rejected(self):
+        self.assertEqual(
+            self.a_c.get("/api/customers", params={"stage": "乱写的阶段"}).status_code, 400
+        )
+        self.assertEqual(self.a_c.get("/api/customers", params={"sort": "乱写"}).status_code, 400)
+
     # ---------- 登录页与 /app 的门禁 ----------
 
     def test_login_page_renders(self):

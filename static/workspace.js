@@ -4,6 +4,18 @@
 const $ = (id) => document.getElementById(id);
 let CURRENT = null; // 当前打开的客户 id
 let SEARCH = ""; // 当前搜索词
+let STAGE_FILTER = ""; // 阶段筛选："" = 全部，"none" = 未分组，其余为具体阶段
+let SORT = "recent"; // recent（最近建档）/ stale（最久没联系）
+let STAGES = []; // 后端给的固定五档，避免前后端各写一份
+
+// 阶段 → 标签配色的修饰类
+const STAGE_CLASS = {
+  新线索: "new",
+  已联系: "contacted",
+  已报价: "quoted",
+  成交: "won",
+  流失: "lost",
+};
 
 // ---------- 小工具 ----------
 
@@ -15,11 +27,16 @@ function escapeHtml(text) {
 }
 
 // 后端时间统一存 UTC，显示时转成本地时区；老数据没带时区后缀就补个 Z
-function formatTime(iso) {
-  if (!iso) return "";
+function toDate(iso) {
+  if (!iso) return null;
   const hasTz = /[zZ]$|[+-]\d\d:?\d\d$/.test(iso);
   const d = new Date(hasTz ? iso : iso + "Z");
-  return isNaN(d) ? iso : d.toLocaleString("zh-CN", { hour12: false });
+  return isNaN(d) ? null : d;
+}
+
+function formatTime(iso) {
+  const d = toDate(iso);
+  return d ? d.toLocaleString("zh-CN", { hour12: false }) : iso || "";
 }
 
 // 所有请求都走这里：出错时把后端给的 detail 原样抛出来，别自己编提示
@@ -71,14 +88,22 @@ async function logout() {
 // 统计条：把「今天该干什么」变成一眼可见的数字
 function renderStats(items) {
   const todayStr = new Date().toLocaleDateString("zh-CN");
-  const isToday = (c) =>
-    c.created_at && new Date(c.created_at).toLocaleDateString("zh-CN") === todayStr;
+  const isToday = (c) => {
+    const d = toDate(c.created_at);
+    return d ? d.toLocaleDateString("zh-CN") === todayStr : false;
+  };
+  // 「多久没联系」= 最后一条跟进；一条都没写过就退回建档时间
+  const lastTouch = (c) => {
+    const d = toDate(c.last_followup_at) || toDate(c.created_at);
+    return d ? d.getTime() : 0;
+  };
+  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
   // 克制：只给「主指标」上品牌色，只给「需要动手的那张」上警示色，其余保持中性
   const cards = [
     { n: items.length, label: "客户总数", cls: "brand" },
     { n: items.filter((c) => c.high_intent).length, label: "高意向", cls: "" },
     { n: items.filter(isToday).length, label: "今日新增", cls: "" },
-    { n: items.filter((c) => !c.followup_count).length, label: "还没写跟进", cls: "warn" },
+    { n: items.filter((c) => lastTouch(c) < weekAgo).length, label: "7 天没联系", cls: "warn" },
   ];
   const box = $("stats");
   box.innerHTML = "";
@@ -92,10 +117,46 @@ function renderStats(items) {
   }
 }
 
+// 阶段下拉有两处：列表工具条（含「全部 / 未分组」）和详情栏（含「未设置」）。
+// 选项来自后端返回的 STAGES，前后端不各写一份。
+function fillStageOptions() {
+  const filter = $("stageFilter");
+  filter.innerHTML = "";
+  for (const [value, label] of [["", "全部阶段"], ["none", "未分组"], ...STAGES.map((s) => [s, s])]) {
+    const o = document.createElement("option");
+    o.value = value;
+    o.textContent = label;
+    filter.appendChild(o);
+  }
+  filter.value = STAGE_FILTER;
+
+  const sel = $("dStage");
+  sel.innerHTML = "";
+  const blank = document.createElement("option");
+  blank.value = "";
+  blank.textContent = "未设置阶段";
+  sel.appendChild(blank);
+  for (const s of STAGES) {
+    const o = document.createElement("option");
+    o.value = s;
+    o.textContent = s;
+    sel.appendChild(o);
+  }
+}
+
 async function loadCustomers() {
   try {
-    const url = "/api/customers" + (SEARCH ? "?q=" + encodeURIComponent(SEARCH) : "");
-    const data = await api(url);
+    const p = new URLSearchParams();
+    if (SEARCH) p.set("q", SEARCH);
+    if (STAGE_FILTER) p.set("stage", STAGE_FILTER);
+    if (SORT !== "recent") p.set("sort", SORT);
+    const qs = p.toString();
+    const data = await api("/api/customers" + (qs ? "?" + qs : ""));
+    // 只在阶段列表变化时重建下拉——每次都重建会打断用户正在做的选择
+    if (Array.isArray(data.stages) && data.stages.join() !== STAGES.join()) {
+      STAGES = data.stages;
+      fillStageOptions();
+    }
     renderStats(data.items);
     const list = $("custList");
     list.innerHTML = "";
@@ -103,9 +164,10 @@ async function loadCustomers() {
     if (!data.items.length) {
       const li = document.createElement("li");
       li.className = "hint";
-      li.textContent = SEARCH
-        ? "没有匹配「" + SEARCH + "」的客户。"
-        : "还没有客户，上面填姓名 / 号码 / 国家 就能建。";
+      li.textContent =
+        SEARCH || STAGE_FILTER
+          ? "当前筛选下没有客户。"
+          : "还没有客户，上面填姓名 / 号码 / 国家 就能建。";
       list.appendChild(li);
       return;
     }
@@ -114,6 +176,12 @@ async function loadCustomers() {
       li.className = "cust-item" + (c.id === CURRENT ? " active" : "");
       li.dataset.id = c.id;
       const tags = [];
+      if (c.stage) {
+        tags.push(
+          '<span class="tag stage ' + (STAGE_CLASS[c.stage] || "") + '">' +
+            escapeHtml(c.stage) + "</span>"
+        );
+      }
       if (c.source) tags.push('<span class="tag src">' + escapeHtml(c.source) + "</span>");
       if (c.high_intent) tags.push('<span class="tag hot">高意向</span>');
       const sub = [c.company, c.country].filter(Boolean).join(" · ");
@@ -175,6 +243,7 @@ async function openCustomer(id) {
     bits.push("建档于 " + formatTime(c.created_at));
     setText($("dMeta"), bits.join(" ｜ "));
     setText($("toggleHot"), c.high_intent ? "取消高意向" : "标记高意向");
+    $("dStage").value = c.stage || "";
     $("fuContent").focus();
     await loadFollowups(id);
     await loadAttachments(id);
@@ -257,6 +326,22 @@ async function doTransfer() {
     });
     setText($("appMsg"), "已转出。");
     closeDetail();
+    await loadCustomers();
+  } catch (err) {
+    setText($("appMsg"), err.message);
+  }
+}
+
+// 阶段一改就存（没有「保存」按钮——和「写跟进回车就存」同一个原则）
+async function changeStage() {
+  if (!CURRENT) return;
+  const stage = $("dStage").value;
+  try {
+    await api("/api/customers/" + CURRENT, {
+      method: "PATCH",
+      body: JSON.stringify({ stage }),
+    });
+    setText($("appMsg"), stage ? "已标为「" + stage + "」" : "已清空阶段");
     await loadCustomers();
   } catch (err) {
     setText($("appMsg"), err.message);
@@ -491,6 +576,15 @@ function onSearchInput() {
 function bind() {
   $("logout").addEventListener("click", logout);
   $("searchBox").addEventListener("input", onSearchInput);
+  $("stageFilter").addEventListener("change", () => {
+    STAGE_FILTER = $("stageFilter").value;
+    loadCustomers();
+  });
+  $("sortSelect").addEventListener("change", () => {
+    SORT = $("sortSelect").value;
+    loadCustomers();
+  });
+  $("dStage").addEventListener("change", changeStage);
 
   $("createCustomer").addEventListener("click", createCustomer);
   // 「建档 ≤30 秒」：每个框都能回车提交，手不用离开键盘

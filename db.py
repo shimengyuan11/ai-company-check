@@ -333,21 +333,28 @@ def list_options(kind):
     return [r["value"] for r in rows]
 
 
-def list_customers(owner_id, is_admin=False, q=""):
+def list_customers(owner_id, is_admin=False, q="", stage="", sort="recent"):
     """客户列表。普通人只看自己的；管理员看全部。
 
-    每条带上「有多少条跟进」，列表页一眼能看出谁很久没跟了。
+    每条带上「有多少条跟进」和「最后一次跟进是什么时候」——列表页一眼能看出谁很久没跟了。
 
     q 非空时按 姓名 / 公司 / 号码 模糊匹配。号码要**同时比原样和归一化两种**——
     否则你搜 `13800001234`，就找不到人家录成 `+86 138 0000 1234` 的那条。
+
+    stage：空 = 全部；`none` = 还没标阶段的；其余按阶段精确匹配。
+    sort：`recent`（默认，最近建档在前）/ `stale`（最久没联系在前，用来挑今天该跟谁）。
     """
     q = (q or "").strip()
+    stage = (stage or "").strip()
     params = [is_admin, owner_id]
+    # 括号不能省：OR 的优先级低于 AND，不加括号时管理员会绕过下面的 stage / 搜索条件
     sql = """
         SELECT c.*,
-               (SELECT count(*) FROM followups f WHERE f.customer_id = c.id) AS followup_count
+               (SELECT count(*) FROM followups f WHERE f.customer_id = c.id) AS followup_count,
+               (SELECT max(f.created_at) FROM followups f WHERE f.customer_id = c.id)
+                   AS last_followup_at
         FROM customers c
-        WHERE %s OR c.owner_id = %s
+        WHERE (%s OR c.owner_id = %s)
     """
     if q:
         like = f"%{q}%"
@@ -360,7 +367,21 @@ def list_customers(owner_id, is_admin=False, q=""):
         """
         # 最后那个 %s <> '' 是防线：如果搜的词里一个数字都没有，别让它匹配到所有号码
         params += [like, like, like, digits, f"%{digits}%"]
-    sql += " ORDER BY c.id DESC"
+    if stage == "none":
+        sql += " AND (c.stage IS NULL OR c.stage = '')"
+    elif stage:
+        sql += " AND c.stage = %s"
+        params.append(stage)
+    if sort == "stale":
+        # created_at / last_followup_at 都是同格式的 ISO(UTC) 字符串，直接比字符串就等价于比时间
+        sql += """
+          ORDER BY coalesce(
+              (SELECT max(f.created_at) FROM followups f WHERE f.customer_id = c.id),
+              c.created_at
+          ) ASC
+        """
+    else:
+        sql += " ORDER BY c.id DESC"
     with pool.connection() as conn:
         rows = conn.execute(sql, params).fetchall()
     return rows

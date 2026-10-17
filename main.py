@@ -177,6 +177,11 @@ class FollowupRequest(BaseModel):
     content: str
 
 
+# 客户阶段：固定五档，不做成可增长的词典（那会长草，见 PRD 对「标签 vs 分类树」的判断）。
+# 空值表示还没标阶段，界面上归到「未分组」。
+STAGES = ("新线索", "已联系", "已报价", "成交", "流失")
+
+
 def _visible_customer(customer_id: int, user):
     """**凡是碰客户的接口，都必须先过这一关**——看不到就当它不存在（404，不泄露「存在」）。
 
@@ -196,10 +201,22 @@ def api_users(request: Request):
 
 
 @app.get("/api/customers")
-def api_list_customers(request: Request, q: str = ""):
-    """客户列表。q 是搜索词（姓名 / 公司 / 号码）。"""
+def api_list_customers(request: Request, q: str = "", stage: str = "", sort: str = "recent"):
+    """客户列表。
+
+    - `q`：搜索词（姓名 / 公司 / 号码）
+    - `stage`：阶段筛选；空 = 全部，`none` = 还没标阶段的
+    - `sort`：`recent` 最近建档在前（默认）/ `stale` 最久没联系在前（挑今天该跟谁）
+    """
     user = auth.require_user(request)
-    return {"items": db.list_customers(user["id"], user["is_admin"], q)}
+    if stage and stage != "none" and stage not in STAGES:
+        raise HTTPException(status_code=400, detail=f"不认识的客户阶段：{stage}")
+    if sort not in ("recent", "stale"):
+        raise HTTPException(status_code=400, detail=f"不认识的排序方式：{sort}")
+    return {
+        "items": db.list_customers(user["id"], user["is_admin"], q, stage, sort),
+        "stages": list(STAGES),
+    }
 
 
 @app.post("/api/customers")

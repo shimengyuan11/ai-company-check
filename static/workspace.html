@@ -52,7 +52,14 @@
 
           <section class="card">
             <h2>我的客户 <span id="custCount" class="hint"></span></h2>
-            <input id="searchBox" type="search" class="search" placeholder="搜姓名 / 号码 / 公司">
+            <div class="list-tools">
+              <input id="searchBox" type="search" class="search" placeholder="搜姓名 / 号码 / 公司">
+              <select id="stageFilter" class="tool-select" aria-label="按阶段筛选"></select>
+              <select id="sortSelect" class="tool-select" aria-label="排序">
+                <option value="recent">最近建档</option>
+                <option value="stale">最久没联系</option>
+              </select>
+            </div>
             <ul id="custList" class="cust-list"></ul>
           </section>
         </div>
@@ -71,6 +78,10 @@
                   </div>
                 </div>
                 <p id="dMeta" class="hint"></p>
+                <div class="stage-row">
+                  <label class="stage-label" for="dStage">阶段</label>
+                  <select id="dStage" aria-label="客户阶段"></select>
+                </div>
               </div>
 
               <div class="newrow">

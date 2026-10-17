@@ -24,6 +24,12 @@
   --danger: #dc2626; --danger-soft: #fef2f2;
   --src-ink: #4338ca; --src-soft: #eef2ff; --src-line: #e0e7ff;
 
+  /* 浅描边：和上面的 -soft 底色配套（标签、危险按钮的边） */
+  --primary-line: #dbeafe;
+  --ok-line:      #a7f3d0;
+  --warn-line:    #fde68a;
+  --danger-line:  #fecaca;
+
   /* 顶栏（深色品牌带） */
   --appbar:     #0f172a;
   --appbar-2:   #1e293b;
@@ -216,7 +222,7 @@ button.ghost-dark:hover { background: rgba(255, 255, 255, .08); color: #fff; fil
   .view { flex-direction: column; }
   .pane-detail { flex: 1 1 auto; position: static; width: 100%; }
 }
-button.danger { color: var(--danger); border-color: #fecaca; }
+button.danger { color: var(--danger); border-color: var(--danger-line); }
 button.danger:hover { background: var(--danger-soft); color: var(--danger); filter: none; }
 
 /* ---------------- 统计条（看板风的主角） ---------------- */
@@ -294,7 +300,7 @@ button.danger:hover { background: var(--danger-soft); color: var(--danger); filt
   background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border);
 }
 .tag.src { background: var(--src-soft); color: var(--src-ink); border-color: var(--src-line); }
-.tag.hot { background: var(--warn-soft); color: var(--warn); border-color: #fde68a; }
+.tag.hot { background: var(--warn-soft); color: var(--warn); border-color: var(--warn-line); }
 
 /* ---------------- 详情 ---------------- */
 .detail-head { padding-bottom: var(--sp-3); border-bottom: 1px solid var(--border); margin-bottom: var(--sp-3); }
@@ -378,3 +384,26 @@ ul#history { list-style: none; padding: 0; }
   .auth-points, .auth-side-foot { display: none; }
   .auth-main { padding: var(--sp-4) var(--sp-4) var(--sp-6); align-items: flex-start; }
 }
+
+/* ---------------- 客户阶段（stage） ----------------
+   固定五档的语义配色：新线索=品牌蓝、已联系=靛、已报价=琥珀、成交=绿、流失=灰。
+   同一套 pill 复用 .tag（见上），这里只换颜色。 */
+.tag.stage { background: var(--surface-2); color: var(--text-2); border-color: var(--border); }
+.tag.stage.new { background: var(--primary-soft); color: var(--primary); border-color: var(--primary-line); }
+.tag.stage.contacted { background: var(--src-soft); color: var(--src-ink); border-color: var(--src-line); }
+.tag.stage.quoted { background: var(--warn-soft); color: var(--warn); border-color: var(--warn-line); }
+.tag.stage.won { background: var(--ok-soft); color: var(--ok); border-color: var(--ok-line); }
+.tag.stage.lost { background: var(--surface-2); color: var(--text-3); border-color: var(--border); }
+
+/* 列表工具条：搜索 + 阶段筛选 + 排序，一行放得下就一行 */
+.list-tools { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-bottom: var(--sp-3); }
+.list-tools .search { flex: 1 1 190px; margin-bottom: 0; }
+.tool-select {
+  flex: 0 0 auto; width: auto; min-width: 116px;
+  margin-bottom: 0; padding: 7px var(--sp-3); font-size: var(--fs-2);
+}
+
+/* 详情栏里的阶段下拉：改了立刻存，没有保存按钮 */
+.stage-row { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-3); }
+.stage-label { flex: 0 0 auto; color: var(--text-3); font-size: var(--fs-2); }
+.stage-row select { width: auto; min-width: 150px; margin-bottom: 0; padding: 6px var(--sp-2); font-size: var(--fs-2); }
