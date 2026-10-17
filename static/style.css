@@ -998,3 +998,25 @@ button:not(.ghost):not(.tag-chip):not(.nav-item):not(.cal-cell):active { transfo
 .page-head { margin-bottom: var(--sp-4); }
 .page-head h1 { font-size: var(--fs-6); letter-spacing: -.02em; margin-bottom: var(--sp-1); }
 .page-head .hint { max-width: 640px; }
+
+/* ============================================================
+   登录页蓝色地球（three.js）
+   位置放在右侧空地，尺寸随窗口走：1181px 以上才出现，
+   30vw 保证在 1440 / 1280 两档都不会压到中间的登录卡。
+   ============================================================ */
+#globe {
+  position: absolute; right: 2vw; top: 50%; transform: translateY(-50%);
+  width: clamp(300px, 30vw, 460px); aspect-ratio: 1 / 1;
+  z-index: 0; opacity: 0;
+  transition: opacity 1.1s cubic-bezier(.22,.61,.36,1);
+  touch-action: none;
+}
+#globe.live { opacity: 1; }
+#globe canvas { display: block; width: 100% !important; height: 100% !important; cursor: grab; }
+#globe canvas:active { cursor: grabbing; }
+/* 地球起来了就把兜底光环撤掉，两者不叠在一起 */
+.has-globe .auth-orbit { display: none; }
+
+@media (max-width: 1180px) {
+  #globe { display: none; }
+}

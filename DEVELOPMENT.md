@@ -44,6 +44,14 @@
   - **背调页 `/` 并入 V2 同构外壳**（左导航 + 内容区）：和 `/app` 长一样，但**保持公开**、
     不需要登录——它是拉新入口，不进登录墙；侧栏另给「客户信息 / 登录 / 注册」两个入口
   - 静态资源带 `?v=mtime` 时长期缓存（immutable）、没带指纹或页面本身一律 no-cache（见下「静态文件的缓存」）
+  - **登录页蓝色地球**（`static/globe.js`）：three.js 做的可拖拽 / 滚轮缩放 / 点击的 3D 地球，
+    点击处起一圈涟漪脉冲、空闲 6 秒恢复自转，带经纬网、两条轨道环、六条外贸航线流光
+  - **three 与贴图全部本地**（`static/vendor/`、`static/textures/`，均 1MB 上下）——不依赖 unpkg
+    之类的 CDN，国内打开不会卡在加载上；页面里的 importmap 也带 `?v=` 指纹，长期缓存
+  - **降级路径**：WebGL 不可用或纹理取不到时，地球容器保持隐藏，页面回落到纯 CSS 同心光环
+    （`.auth-orbit`）；`globe.js` 用 `preserveDrawingBuffer: true`，为的是截图/右键存图能拿到真实画面
+  - 静态资源版本号的正则放开了子目录（`_ASSET_RE` 支持 `static/vendor/xxx.js`），
+    否则 vendor 里的 three 只能 no-cache，每次刷新都回来验一次
 
 **自动化护栏**（`tests/`，7 个文件共 69 项）：`test_permissions.py`（21）管客户的「各管各的」——A/B 隔离、管理员可见、
 移交换人、尾号 9 位查重、未登录拦截、生成话术不越权、页面与静态资源缓存头；`test_templates.py`（7）管话术库——

@@ -967,8 +967,8 @@ class NoCacheStaticFiles(StaticFiles):
         return response
 
 
-# 页面里的静态资源 URL：/static/xxx.js 或 .css
-_ASSET_RE = re.compile(r'(/static/[A-Za-z0-9_\-.]+\.(?:js|css))(")')
+# 页面里的静态资源 URL：/static/xxx.js 或 .css（含子目录，如 vendor/three.module.js）
+_ASSET_RE = re.compile(r'(/static/[A-Za-z0-9_\-./]+\.(?:js|css))(")')
 
 
 def _page(path: Path) -> Response:

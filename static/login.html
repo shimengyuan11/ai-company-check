@@ -74,7 +74,10 @@
     </form>
   </main>
 
-  <!-- 同心光环：比地球更克制，也有"信号/连接"的意思。纯 CSS，无第三方库 -->
+  <!-- 蓝色地球：three.js（vendor 在本地，无 CDN 依赖），拖拽旋转 / 滚轮缩放 / 点击涟漪 -->
+  <div id="globe" aria-hidden="true"></div>
+
+  <!-- 兜底光环：WebGL 或纹理不可用时显示，纯 CSS，无第三方库 -->
   <div class="auth-orbit" aria-hidden="true">
     <div class="ring ring-1"></div>
     <div class="ring ring-2"></div>
@@ -86,6 +89,15 @@
   </div>
 
 </div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "/static/vendor/three.module.js",
+    "orbit-controls": "/static/vendor/OrbitControls.js"
+  }
+}
+</script>
+<script type="module" src="/static/globe.js"></script>
 <script src="/static/login.js"></script>
 </body>
 </html>
