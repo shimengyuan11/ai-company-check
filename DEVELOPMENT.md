@@ -76,17 +76,30 @@
   会被 302 到 `/login`，探针于是永远等不到 `#nav`。做法：`await fetch("/api/login")` 之后再用 JS 创建 iframe
 - 部署前：新开空白 venv 只按 `requirements.txt` 装再启动一次（漏依赖会让线上直接挂，踩过）
 
-## 静态文件的缓存（2026-10-17 踩过，已治）
+## 静态文件的缓存（2026-10-17 踩过两次，都治了）
 
-线上部署成功、`/login` 都已经是新版了，用户刷新工作台却还是**旧界面**：
-`StaticFiles` 默认不发 `Cache-Control`，浏览器对这类响应做启发式缓存，把旧 HTML / JS 存住。
+**第一次**：线上部署成功、`/login` 都已是新版，用户刷新工作台却还是旧界面。
+原因是 `StaticFiles` 默认不发 `Cache-Control`，浏览器对这类响应做启发式缓存，把旧 HTML / JS 存住。
+**做法**：`NoCacheStaticFiles` 给 `/static/*` 统一加 `Cache-Control: no-cache`；
+`/app`、`/login` 也带同一个头。浏览器每次回来验一次，文件没变就 304。
 
-现在 `main.py` 里用 `NoCacheStaticFiles` 给 `/static/*` 统一加 `Cache-Control: no-cache`，
-`/app`、`/login` 的 `FileResponse` 也带同一个头。浏览器每次回来验一次，文件没变就 304，
-代价可以忽略，换来的是「部署完刷新即见」。
+**第二次**（`no-cache` 之后仍然复发）：用户拿到的是**新 HTML + 旧 JS**——
+左侧导航多了「话术库」，但点它没反应、内容区全白。原因是浏览器手里那条缓存条目
+是**在 no-cache 生效之前存下的**，它自带旧策略，普通刷新不一定会换新。
+**做法**：`_page()` 在发页面时给每个 `/static/*.js|css` 的 URL 追加 `?v=<文件修改时间>`。
+文件一变 URL 就变，旧缓存条目对不上号，浏览器没得选只能重拉。
 
-自查办法：`curl -s -o /dev/null -D - <地址>/static/workspace.js | grep -i cache-control`
-应该看到 `cache-control: no-cache`。
+> 记住这两条的分工：`no-cache` 管「以后」，URL 版本号管「已经存下的」。
+> 只做前者，老用户仍可能卡在旧脚本上。
+
+侧栏底部有个 `build <时间戳>`（来自 script URL 里的 `?v=`），用户报问题时让他念这个号，
+就能立刻判断他跑的是哪一版。
+
+自查办法：
+```bash
+curl -s -o /dev/null -D - <地址>/static/workspace.js | grep -i cache-control   # 应为 no-cache
+curl -s <地址>/app | grep -o 'workspace\.js?v=[0-9]*'                          # 应带 ?v=
+```
 
 ## 数据层迁移：已完成（2026-10-16）
 

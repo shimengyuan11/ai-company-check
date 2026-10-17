@@ -1,10 +1,11 @@
 import os
+import re
 from pathlib import Path
 from urllib.parse import quote
 
 import httpx
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
@@ -591,16 +592,41 @@ class NoCacheStaticFiles(StaticFiles):
         return response
 
 
+# 页面里的静态资源 URL：/static/xxx.js 或 .css
+_ASSET_RE = re.compile(r'(/static/[A-Za-z0-9_\-.]+\.(?:js|css))(")')
+
+
+def _page(path: Path) -> Response:
+    """发页面时，给静态资源的 URL 带上「文件修改时间」当版本号。
+
+    为什么非做不可：浏览器手里可能留着**旧缓存条目**（在 no-cache 头生效之前存下的），
+    那条条目自己带着旧的缓存策略，普通刷新不一定换新——于是就出现
+    「HTML 是新的、JS 还是旧的」这种半新不旧的界面：左侧导航有新栏目，点了却没反应、内容区全白。
+    给 URL 加版本号后，文件一变 URL 就变，浏览器没得选，只能重新拉。
+    """
+    html = path.read_text(encoding="utf-8")
+
+    def with_version(match: "re.Match[str]") -> str:
+        url = match.group(1)
+        try:
+            version = int((BASE_DIR / url.lstrip("/")).stat().st_mtime)
+        except OSError:
+            version = 0
+        return f"{url}?v={version}{match.group(2)}"
+
+    return HTMLResponse(_ASSET_RE.sub(with_version, html), headers=NO_CACHE)
+
+
 @app.get("/")
 def index():
     """把前端页面发回浏览器。"""
-    return FileResponse(BASE_DIR / "static" / "index.html")
+    return _page(BASE_DIR / "static" / "index.html")
 
 
 @app.get("/login")
 def login_page():
     """独立登录页。未登录的 /app 会被送到这里，登录成功再跳回去。"""
-    return FileResponse(BASE_DIR / "static" / "login.html", headers=NO_CACHE)
+    return _page(BASE_DIR / "static" / "login.html")
 
 
 @app.get("/app")
@@ -612,7 +638,7 @@ def workspace(request: Request):
     """
     if auth.current_user(request) is None:
         return RedirectResponse("/login?next=/app", status_code=302)
-    return FileResponse(BASE_DIR / "static" / "workspace.html", headers=NO_CACHE)
+    return _page(BASE_DIR / "static" / "workspace.html")
 
 
 app.mount("/static", NoCacheStaticFiles(directory=BASE_DIR / "static"), name="static")

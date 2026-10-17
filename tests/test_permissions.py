@@ -16,6 +16,7 @@
 跑法（项目根目录）：
     ./.venv/Scripts/python.exe -m unittest discover -s tests -v
 """
+import re
 import unittest
 import uuid
 
@@ -171,6 +172,24 @@ class PermissionTest(unittest.TestCase):
         )
         self.assertEqual(self.a_c.get("/app").headers.get("cache-control"), "no-cache")
         self.assertEqual(_client().get("/login").headers.get("cache-control"), "no-cache")
+
+    def test_assets_are_versioned(self):
+        """页面引用的 JS/CSS 必须带 ?v=——否则浏览器手里的旧缓存条目会一直用旧脚本。
+
+        这个坑比「没有 no-cache」更隐蔽：用户拿到新 HTML、旧 JS，
+        左侧导航有新栏目但点了没反应、内容区全白。
+        """
+        html = self.a_c.get("/app").text
+        self.assertIn("workspace.js?v=", html)
+        self.assertIn("style.css?v=", html)
+        self.assertIn("login.js?v=", _client().get("/login").text)
+
+    def test_versioned_asset_url_serves_file(self):
+        """带 ?v= 的 URL 也要能正常取到文件（版本号不能被当成路径的一部分）。"""
+        html = self.a_c.get("/app").text
+        match = re.search(r"/static/workspace\.js\?v=\d+", html)
+        self.assertIsNotNone(match, "页面里应该能找到带版本号的 script 地址")
+        self.assertEqual(self.a_c.get(match.group(0)).status_code, 200)
 
     # ---------- 规则 2：管理员看得到全部 ----------
 

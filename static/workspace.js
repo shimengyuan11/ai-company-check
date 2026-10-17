@@ -1,6 +1,14 @@
 // 外贸客户工作台 —— 前端逻辑
 // 一句话：所有数据都通过 /api/* 拿；「我是谁」由后端会话决定，前端只管显示。
 
+// 从自己这个 script 的 URL 里读版本号（main.py 发页面时会带 ?v=文件修改时间）。
+// 用处：出问题时用户能直接报出他跑的是哪一版，省掉「你看到的是不是旧的」这种来回。
+const BUILD = (() => {
+  const src = (document.currentScript && document.currentScript.src) || "";
+  const m = src.match(/[?&]v=(\d+)/);
+  return m ? m[1] : "dev";
+})();
+
 const $ = (id) => document.getElementById(id);
 let CURRENT = null; // 当前打开的客户 id
 let SEARCH = ""; // 当前搜索词
@@ -71,6 +79,7 @@ function showApp(user) {
   $("app").hidden = false;
   $("logout").hidden = false;
   setText($("whoami"), user.display_name + (user.is_admin ? "（管理员）" : ""));
+  setText($("build"), "build " + BUILD);
   $("newName").focus();
   switchView("customers");
   loadOptions();

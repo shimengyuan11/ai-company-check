@@ -472,3 +472,6 @@ textarea::placeholder { color: var(--text-3); }
 /* 生成话术的输出区：结果可编辑（人过一遍再发），复制按钮在下面 */
 .gen-out { margin-top: var(--sp-2); }
 .gen-out textarea { font-size: var(--fs-2); }
+
+/* 侧栏底部的构建版本号（用来判断「你跑的是哪一版」） */
+.build-tag { font-size: 11px; color: rgba(255, 255, 255, .32); letter-spacing: .02em; }
