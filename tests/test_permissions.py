@@ -16,60 +16,10 @@
 跑法（项目根目录）：
     ./.venv/Scripts/python.exe -m unittest discover -s tests -v
 """
-import os
-import sys
 import unittest
 import uuid
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-
-from dotenv import load_dotenv
-
-load_dotenv(ROOT / ".env")
-
-_base = os.environ.get("DATABASE_URL", "")
-if not _base:
-    raise RuntimeError("缺少 DATABASE_URL：测试要读 .env 里的连接串")
-
-# Neon 池化端点不支持 startup 参数（实测报错 unsupported startup parameter in options）
-_DIRECT = _base.replace("-pooler", "")
-SCHEMA = "rivet_test_" + uuid.uuid4().hex[:8]
-
-_sep = "&" if "?" in _DIRECT else "?"
-os.environ["DATABASE_URL"] = f"{_DIRECT}{_sep}options=-c%20search_path%3D{SCHEMA}"
-os.environ["SIGNUP_CODE"] = "testcode"  # 注册需要邀请码；测试里给一个固定值
-os.environ["SESSION_SECRET"] = "test-secret"
-
-import psycopg  # noqa: E402
-
-# 必须先建好 schema，再 import main —— main 在 import 时就会 init_db() 建表
-with psycopg.connect(_DIRECT, autocommit=True) as _conn:
-    _conn.execute(f'CREATE SCHEMA IF NOT EXISTS "{SCHEMA}"')
-
-from fastapi.testclient import TestClient  # noqa: E402
-
-import main as app_module  # noqa: E402
-
-app = app_module.app
-
-ADMIN = {}  # 模块级管理员（第一个注册的人才会成为管理员，所以要建一次共用）
-
-
-def _client():
-    """每个 client 自带一套 cookie —— 这就是「两个不同的人」。"""
-    return TestClient(app)
-
-
-def _register(client, prefix):
-    username = f"{prefix}_{uuid.uuid4().hex[:6]}"
-    r = client.post(
-        "/api/register",
-        json={"username": username, "password": "pw123456", "code": "testcode"},
-    )
-    assert r.status_code == 200, r.text
-    return r.json()["user"]
+from _db import ADMIN, app, client as _client, ensure_admin, register as _register
 
 
 def _phone():
@@ -87,15 +37,7 @@ def _create(client, name="测试客户", phone=None, country="美国"):
 
 
 def setUpModule():
-    c = _client()
-    ADMIN["user"] = _register(c, "admin")
-    ADMIN["client"] = c
-
-
-def tearDownModule():
-    app_module.db.pool.close()
-    with psycopg.connect(_DIRECT, autocommit=True) as conn:
-        conn.execute(f'DROP SCHEMA IF EXISTS "{SCHEMA}" CASCADE')
+    ensure_admin()
 
 
 class PermissionTest(unittest.TestCase):
@@ -152,6 +94,17 @@ class PermissionTest(unittest.TestCase):
             json={"contact_name": "陌生人", "phone": _phone(), "country": "美国"},
         )
         self.assertEqual(r.status_code, 401, "未登录不该建得下客户")
+
+    def test_generate_is_scoped_to_owner(self):
+        """B 对 A 的客户调生成接口 → 404。权限在调模型之前就拦住了，不会白花钱。"""
+        c = _create(self.a_c, "生成测试")
+        self.assertEqual(
+            self.b_c.post(
+                f"/api/customers/{c['id']}/generate", json={"request": "催单"}
+            ).status_code,
+            404,
+        )
+        self.assertEqual(self.b_c.get(f"/api/customers/{c['id']}/generations").status_code, 404)
 
     # ---------- 规则 5：阶段筛选 / 排序（也不能绕过归属） ----------
 

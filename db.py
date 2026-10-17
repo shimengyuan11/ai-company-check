@@ -48,6 +48,15 @@ def _now():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+# 预置标签：第一次打开话术库就有东西可选。
+# 不给默认值的话，面对一张空标签表没人知道怎么起手；给太多又会「长草」，所以只铺常用项。
+DEFAULT_TAGS = {
+    "来源": ("FB", "邮件", "展会", "阿里国际站"),
+    "类型": ("个人买家", "代理商", "批发商", "终端客户"),
+    "场景": ("首次触达", "已读不回激活", "逼单", "嫌贵", "比价", "老客户复购"),
+}
+
+
 def init_db():
     """建表。IF NOT EXISTS：表已存在就什么都不做（所以可以重复调用）。"""
     with pool.connection() as conn:
@@ -160,6 +169,74 @@ def init_db():
             """
         )
 
+        # —— 第 3 期：话术库 ——
+        # 模板：**团队共享**（谁都能用、都能改），owner_id 只记录谁建的。
+        # body 里支持 {客户名} {产品} {价格} 这类占位符——没有占位符模板就不能复用。
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS templates (
+                id         SERIAL PRIMARY KEY,
+                owner_id   INTEGER REFERENCES users(id),
+                title      TEXT NOT NULL,
+                body       TEXT NOT NULL,
+                use_count  INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT,
+                updated_at TEXT
+            )
+            """
+        )
+
+        # 标签：**三组**（来源 / 类型 / 场景），不是一棵分类树。
+        # 理由见 docs/v2-needs-triage.md 第六节：三个维度会交叉（FB 来的也可能是代理商），
+        # 做成树必然卡在「这条该挂哪个枝」。
+        # is_active：停用而不是物理删——删了会把老模板上的标签一起带走。
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tags (
+                id         SERIAL PRIMARY KEY,
+                grp        TEXT NOT NULL,
+                name       TEXT NOT NULL,
+                is_active  BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TEXT,
+                UNIQUE (grp, name)
+            )
+            """
+        )
+
+        # 模板 ↔ 标签：多对多。这就是 triage 里说的「练数据库的好例子」。
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS template_tags (
+                template_id INTEGER NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
+                tag_id      INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+                PRIMARY KEY (template_id, tag_id)
+            )
+            """
+        )
+
+        # 生成记录：挂在客户下，记「基于哪个模板 + 当时的要求 + 用了哪个模型」。
+        # 不存下来就等于「用过就没了」，又回到扒聊天记录。
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS generations (
+                id          SERIAL PRIMARY KEY,
+                customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+                template_id INTEGER REFERENCES templates(id) ON DELETE SET NULL,
+                user_id     INTEGER NOT NULL REFERENCES users(id),
+                request     TEXT,
+                output      TEXT NOT NULL,
+                model       TEXT,
+                created_at  TEXT
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_generations_customer ON generations(customer_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_template_tags_tag ON template_tags(tag_id)"
+        )
+
         # 这两条是最常用的查询条件，给它们建索引
         conn.execute("CREATE INDEX IF NOT EXISTS idx_customers_owner ON customers(owner_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_followups_customer ON followups(customer_id)")
@@ -177,6 +254,16 @@ def init_db():
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_customers_phone_norm ON customers(phone_norm)"
         )
+
+        # —— 预置默认标签（幂等：靠 UNIQUE(grp, name) 兜住，重复启动不会重复插）——
+        for grp, names in DEFAULT_TAGS.items():
+            for name in names:
+                conn.execute(
+                    "INSERT INTO tags (grp, name, is_active, created_at)"
+                    " VALUES (%s, %s, TRUE, %s)"
+                    " ON CONFLICT (grp, name) DO NOTHING",
+                    (grp, name, _now()),
+                )
 
 
 # ===================== V1：背调 =====================
@@ -547,3 +634,189 @@ def delete_product(product_id):
     with pool.connection() as conn:
         cur = conn.execute("DELETE FROM products WHERE id = %s", (product_id,))
         return cur.rowcount > 0
+
+
+# ===================== 第 3 期：话术库（团队共享） =====================
+# 模板和标签都**不分归属**——话术是团队资产（和产品目录一个性质），
+# 不像客户那样各管各的。归属只用来记「谁建的」。
+# 只有一个地方要权限：生成记录挂在客户下，谁能看这个客户，谁才能看它的生成记录。
+
+
+def list_tags(include_inactive=False):
+    """标签清单，按组给前端分组用。默认只给在用的（停用的从下拉里消失）。"""
+    sql = "SELECT * FROM tags"
+    if not include_inactive:
+        sql += " WHERE is_active = TRUE"
+    sql += " ORDER BY grp, name"
+    with pool.connection() as conn:
+        return conn.execute(sql).fetchall()
+
+
+def create_tag(grp, name):
+    """建标签；同组同名已存在就复用它（顺手重新启用）。
+
+    用 ON CONFLICT 而不是「先查再插」：两个请求同时建同一个标签时不会撞车。
+    """
+    with pool.connection() as conn:
+        row = conn.execute(
+            """
+            INSERT INTO tags (grp, name, is_active, created_at)
+            VALUES (%s, %s, TRUE, %s)
+            ON CONFLICT (grp, name)
+            DO UPDATE SET is_active = TRUE
+            RETURNING id
+            """,
+            (grp, name, _now()),
+        ).fetchone()
+    return row["id"]
+
+
+def set_tag_active(tag_id, active):
+    """停用 / 重新启用。不物理删——删了会把老模板上的标签一起抽走。"""
+    with pool.connection() as conn:
+        cur = conn.execute("UPDATE tags SET is_active = %s WHERE id = %s", (bool(active), tag_id))
+        return cur.rowcount > 0
+
+
+def _tags_by_template(conn, template_ids):
+    """一次把一批模板的标签捞回来，避免每个模板一条查询（N+1）。"""
+    ids = list(template_ids)
+    if not ids:
+        return {}
+    rows = conn.execute(
+        """
+        SELECT tt.template_id, t.id, t.grp, t.name, t.is_active
+        FROM template_tags tt JOIN tags t ON t.id = tt.tag_id
+        WHERE tt.template_id = ANY(%s)
+        ORDER BY t.grp, t.name
+        """,
+        (ids,),
+    ).fetchall()
+    out = {}
+    for r in rows:
+        out.setdefault(r["template_id"], []).append(
+            {"id": r["id"], "grp": r["grp"], "name": r["name"], "is_active": r["is_active"]}
+        )
+    return out
+
+
+def create_template(owner_id, title, body, tag_ids=None):
+    with pool.connection() as conn:
+        row = conn.execute(
+            "INSERT INTO templates (owner_id, title, body, use_count, created_at, updated_at)"
+            " VALUES (%s, %s, %s, 0, %s, %s) RETURNING id",
+            (owner_id, title, body, _now(), _now()),
+        ).fetchone()
+        tid = row["id"]
+        for tag_id in tag_ids or []:
+            conn.execute(
+                "INSERT INTO template_tags (template_id, tag_id) VALUES (%s, %s)"
+                " ON CONFLICT DO NOTHING",
+                (tid, tag_id),
+            )
+    return tid
+
+
+def list_templates(q="", tag_id=None):
+    """模板列表。用得多的排前面——常用的一眼能看到。"""
+    q = (q or "").strip()
+    conds, params = [], []
+    if q:
+        conds.append("(t.title ILIKE %s OR t.body ILIKE %s)")
+        like = f"%{q}%"
+        params += [like, like]
+    if tag_id:
+        conds.append(
+            "EXISTS (SELECT 1 FROM template_tags tt"
+            " WHERE tt.template_id = t.id AND tt.tag_id = %s)"
+        )
+        params.append(tag_id)
+    sql = "SELECT t.* FROM templates t"
+    if conds:
+        sql += " WHERE " + " AND ".join(conds)
+    sql += " ORDER BY t.use_count DESC, t.id DESC"
+    with pool.connection() as conn:
+        rows = conn.execute(sql, params).fetchall()
+        tags = _tags_by_template(conn, [r["id"] for r in rows])
+    for r in rows:
+        r["tags"] = tags.get(r["id"], [])
+    return rows
+
+
+def get_template(template_id):
+    with pool.connection() as conn:
+        row = conn.execute("SELECT * FROM templates WHERE id = %s", (template_id,)).fetchone()
+        if row is not None:
+            row["tags"] = _tags_by_template(conn, [template_id]).get(template_id, [])
+    return row
+
+
+def update_template(template_id, title=None, body=None, tag_ids=None):
+    """改模板。只改传进来的字段；tag_ids 传了才重写标签关联（传空列表 = 清空标签）。"""
+    sets, values = [], []
+    if title is not None:
+        sets.append("title = %s")
+        values.append(title)
+    if body is not None:
+        sets.append("body = %s")
+        values.append(body)
+    with pool.connection() as conn:
+        if sets:
+            sets.append("updated_at = %s")
+            values.append(_now())
+            values.append(template_id)
+            cur = conn.execute(
+                f"UPDATE templates SET {', '.join(sets)} WHERE id = %s", values
+            )
+            if cur.rowcount == 0:
+                return False
+        if tag_ids is not None:
+            conn.execute("DELETE FROM template_tags WHERE template_id = %s", (template_id,))
+            for tag_id in tag_ids:
+                conn.execute(
+                    "INSERT INTO template_tags (template_id, tag_id) VALUES (%s, %s)"
+                    " ON CONFLICT DO NOTHING",
+                    (template_id, tag_id),
+                )
+    return True
+
+
+def delete_template(template_id):
+    with pool.connection() as conn:
+        cur = conn.execute("DELETE FROM templates WHERE id = %s", (template_id,))
+        return cur.rowcount > 0
+
+
+def bump_template_use(template_id):
+    """用一次就 +1。用得多的一眼能看到——这也是判断该留该删的依据。"""
+    with pool.connection() as conn:
+        conn.execute("UPDATE templates SET use_count = use_count + 1 WHERE id = %s", (template_id,))
+
+
+def add_generation(customer_id, template_id, user_id, request, output, model):
+    with pool.connection() as conn:
+        row = conn.execute(
+            "INSERT INTO generations"
+            " (customer_id, template_id, user_id, request, output, model, created_at)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (customer_id, template_id, user_id, request, output, model, _now()),
+        ).fetchone()
+    return row["id"]
+
+
+def list_generations(customer_id):
+    """这个客户生成过什么。权限由调用方先过 get_customer 把关。"""
+    with pool.connection() as conn:
+        return conn.execute(
+            """
+            SELECT g.id, g.customer_id, g.template_id, g.request, g.output, g.model,
+                   g.created_at, t.title AS template_title,
+                   u.display_name, u.username
+            FROM generations g
+            LEFT JOIN templates t ON t.id = g.template_id
+            JOIN users u ON u.id = g.user_id
+            WHERE g.customer_id = %s
+            ORDER BY g.id DESC
+            """,
+            (customer_id,),
+        ).fetchall()

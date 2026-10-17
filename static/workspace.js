@@ -244,6 +244,12 @@ async function openCustomer(id) {
     setText($("dMeta"), bits.join(" ｜ "));
     setText($("toggleHot"), c.high_intent ? "取消高意向" : "标记高意向");
     $("dStage").value = c.stage || "";
+    // 生成区：模板下拉 + 这个客户生成过的记录
+    $("genRequest").value = "";
+    $("genOut").hidden = true;
+    setText($("genMsg"), "");
+    loadGenTemplates();
+    await loadGenerations(id);
     $("fuContent").focus();
     await loadFollowups(id);
     await loadAttachments(id);
@@ -408,11 +414,16 @@ async function loadOptions() {
 
 function switchView(name) {
   $("viewCustomers").hidden = name !== "customers";
+  $("viewTemplates").hidden = name !== "templates";
   $("viewProducts").hidden = name !== "products";
   document.querySelectorAll(".nav-item[data-view]").forEach((el) => {
     el.classList.toggle("active", el.dataset.view === name);
   });
   if (name === "products") loadProducts();
+  if (name === "templates") {
+    loadTags();
+    loadTemplates();
+  }
 }
 
 // ---------- 附件（PI / 报价单） ----------
@@ -561,6 +572,339 @@ async function deleteProduct(pid, name) {
   }
 }
 
+// ---------- 话术库：模板 + 标签（团队共享） ----------
+// 标签是三组（来源 / 类型 / 场景），不是一棵树——三个维度会交叉，
+// 做成树必然卡在「这条该挂哪个枝」，chip 可以一次挂多个。
+
+let TAGS = []; // 在用的标签
+let TAG_GROUPS = []; // 来源 / 类型 / 场景（后端给，避免前后端各写一份）
+let TPL_SELECTED = new Set(); // 表单里选中的标签 id
+let TPL_EDIT_ID = null; // 正在编辑的模板 id（null = 新建）
+let TPL_FILTER_TAG = null; // 列表按哪个标签筛
+let TPL_SEARCH = "";
+
+function tagRow(grp, list, isOn, onClick) {
+  const row = document.createElement("div");
+  row.className = "tag-row";
+  const label = document.createElement("span");
+  label.className = "tag-row-label";
+  label.textContent = grp;
+  row.appendChild(label);
+  for (const t of list) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "tag-chip" + (isOn(t) ? " on" : "");
+    chip.textContent = t.name;
+    chip.addEventListener("click", () => onClick(t));
+    row.appendChild(chip);
+  }
+  return row;
+}
+
+function renderTagPicker() {
+  // 表单：多选
+  const picker = $("tplTagPicker");
+  picker.innerHTML = "";
+  for (const grp of TAG_GROUPS) {
+    const list = TAGS.filter((t) => t.grp === grp);
+    if (!list.length) continue;
+    picker.appendChild(
+      tagRow(
+        grp,
+        list,
+        (t) => TPL_SELECTED.has(t.id),
+        (t) => {
+          if (TPL_SELECTED.has(t.id)) TPL_SELECTED.delete(t.id);
+          else TPL_SELECTED.add(t.id);
+          renderTagPicker();
+        }
+      )
+    );
+  }
+
+  // 列表上方：单选筛选
+  const filter = $("tplFilterTags");
+  filter.innerHTML = "";
+  for (const grp of TAG_GROUPS) {
+    const list = TAGS.filter((t) => t.grp === grp);
+    if (!list.length) continue;
+    filter.appendChild(
+      tagRow(
+        grp,
+        list,
+        (t) => TPL_FILTER_TAG === t.id,
+        (t) => {
+          TPL_FILTER_TAG = TPL_FILTER_TAG === t.id ? null : t.id;
+          renderTagPicker();
+          loadTemplates();
+        }
+      )
+    );
+  }
+}
+
+async function loadTags() {
+  try {
+    const d = await api("/api/tags");
+    TAGS = d.items;
+    TAG_GROUPS = d.groups;
+    const sel = $("newTagGrp");
+    sel.innerHTML = "";
+    for (const g of TAG_GROUPS) {
+      const o = document.createElement("option");
+      o.value = g;
+      o.textContent = g;
+      sel.appendChild(o);
+    }
+    renderTagPicker();
+  } catch (err) {
+    setText($("tplMsg"), err.message);
+  }
+}
+
+async function loadTemplates() {
+  try {
+    const p = new URLSearchParams();
+    if (TPL_SEARCH) p.set("q", TPL_SEARCH);
+    if (TPL_FILTER_TAG) p.set("tag_id", TPL_FILTER_TAG);
+    const qs = p.toString();
+    const data = await api("/api/templates" + (qs ? "?" + qs : ""));
+    const ul = $("tplList");
+    ul.innerHTML = "";
+    setText($("tplCount"), "共 " + data.items.length + " 条");
+    if (!data.items.length) {
+      const li = document.createElement("li");
+      li.className = "hint";
+      li.textContent =
+        TPL_SEARCH || TPL_FILTER_TAG
+          ? "当前筛选下没有模板。"
+          : "还没有模板。上面写一条，以后一句话就能调出来。";
+      ul.appendChild(li);
+      return;
+    }
+    for (const t of data.items) {
+      const li = document.createElement("li");
+      li.className = "cust-item tpl-item";
+
+      const head = document.createElement("div");
+      head.className = "tpl-head";
+      const name = document.createElement("div");
+      name.className = "cust-name";
+      name.textContent = t.title;
+      const count = document.createElement("span");
+      count.className = "hint";
+      count.textContent = "用过 " + t.use_count + " 次";
+      head.append(name, count);
+
+      const body = document.createElement("p");
+      body.className = "tpl-body";
+      body.textContent = t.body;
+
+      const meta = document.createElement("div");
+      meta.className = "cust-meta";
+      for (const tg of t.tags) {
+        const s = document.createElement("span");
+        s.className = "tag";
+        s.textContent = tg.grp + "·" + tg.name;
+        meta.appendChild(s);
+      }
+
+      const actions = document.createElement("div");
+      actions.className = "tpl-actions";
+      const edit = document.createElement("button");
+      edit.className = "ghost";
+      edit.textContent = "编辑";
+      edit.addEventListener("click", () => startEditTemplate(t.id));
+      const del = document.createElement("button");
+      del.className = "ghost danger";
+      del.textContent = "删";
+      del.addEventListener("click", () => deleteTemplate(t.id, t.title));
+      actions.append(edit, del);
+
+      li.append(head, body, meta, actions);
+      ul.appendChild(li);
+    }
+  } catch (err) {
+    setText($("tplMsg"), err.message);
+  }
+}
+
+async function startEditTemplate(id) {
+  try {
+    const t = await api("/api/templates/" + id);
+    TPL_EDIT_ID = id;
+    $("tplFormTitle").textContent = "编辑话术模板";
+    $("tplTitle").value = t.title;
+    $("tplBody").value = t.body;
+    TPL_SELECTED = new Set(t.tags.map((x) => x.id));
+    $("cancelEdit").hidden = false;
+    $("saveTemplate").textContent = "保存修改";
+    renderTagPicker();
+    $("tplTitle").focus();
+  } catch (err) {
+    setText($("tplMsg"), err.message);
+  }
+}
+
+function cancelEditTemplate() {
+  TPL_EDIT_ID = null;
+  $("tplFormTitle").textContent = "新建话术模板";
+  $("tplTitle").value = "";
+  $("tplBody").value = "";
+  TPL_SELECTED = new Set();
+  $("cancelEdit").hidden = true;
+  $("saveTemplate").textContent = "保存模板";
+  renderTagPicker();
+}
+
+async function saveTemplate() {
+  const title = $("tplTitle").value.trim();
+  const body = $("tplBody").value.trim();
+  if (!title || !body) return setText($("tplMsg"), "标题和正文都要填");
+  const payload = { title, body, tag_ids: [...TPL_SELECTED] };
+  try {
+    if (TPL_EDIT_ID) {
+      await api("/api/templates/" + TPL_EDIT_ID, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      setText($("tplMsg"), "已保存修改：" + title);
+    } else {
+      await api("/api/templates", { method: "POST", body: JSON.stringify(payload) });
+      setText($("tplMsg"), "已保存：" + title);
+    }
+    cancelEditTemplate();
+    await loadTemplates();
+  } catch (err) {
+    setText($("tplMsg"), err.message);
+  }
+}
+
+async function deleteTemplate(id, title) {
+  if (!confirm("删掉模板「" + title + "」？不能恢复。")) return;
+  try {
+    await api("/api/templates/" + id, { method: "DELETE" });
+    setText($("tplMsg"), "已删除。");
+    if (TPL_EDIT_ID === id) cancelEditTemplate();
+    await loadTemplates();
+  } catch (err) {
+    setText($("tplMsg"), err.message);
+  }
+}
+
+async function addTag() {
+  const grp = $("newTagGrp").value;
+  const name = $("newTagName").value.trim();
+  if (!name) return setText($("tplMsg"), "标签名要填");
+  try {
+    const d = await api("/api/tags", {
+      method: "POST",
+      body: JSON.stringify({ grp, name }),
+    });
+    $("newTagName").value = "";
+    await loadTags();
+    TPL_SELECTED.add(d.id);
+    renderTagPicker();
+    setText($("tplMsg"), "已加标签：" + grp + "·" + name);
+  } catch (err) {
+    setText($("tplMsg"), err.message);
+  }
+}
+
+let tplSearchTimer = null;
+function onTplSearchInput() {
+  clearTimeout(tplSearchTimer);
+  tplSearchTimer = setTimeout(() => {
+    TPL_SEARCH = $("tplSearch").value.trim();
+    loadTemplates();
+  }, 250);
+}
+
+// ---------- 按客户生成话术（AI 出草稿，人负责） ----------
+
+async function loadGenTemplates() {
+  try {
+    const data = await api("/api/templates");
+    const sel = $("genTemplate");
+    sel.innerHTML = "";
+    const none = document.createElement("option");
+    none.value = "";
+    none.textContent = "不用模板（直接按客户写）";
+    sel.appendChild(none);
+    for (const t of data.items) {
+      const o = document.createElement("option");
+      o.value = t.id;
+      o.textContent = t.title + (t.use_count ? "（用过 " + t.use_count + " 次）" : "");
+      sel.appendChild(o);
+    }
+  } catch (_) {
+    /* 模板取不到也能直接按客户生成 */
+  }
+}
+
+async function loadGenerations(id) {
+  try {
+    const d = await api("/api/customers/" + id + "/generations");
+    const ul = $("genList");
+    ul.innerHTML = "";
+    for (const g of d.items) {
+      const li = document.createElement("li");
+      li.className = "fu-item";
+      const time = document.createElement("span");
+      time.className = "fu-time";
+      time.textContent =
+        formatTime(g.created_at) +
+        " · " +
+        (g.display_name || g.username) +
+        (g.template_title ? " · " + g.template_title : "");
+      const body = document.createElement("span");
+      body.className = "fu-content";
+      body.textContent = g.output;
+      li.append(time, body);
+      ul.appendChild(li);
+    }
+  } catch (_) {
+    /* 生成记录取不到不影响主流程 */
+  }
+}
+
+async function doGenerate() {
+  if (!CURRENT) return;
+  const btn = $("doGenerate");
+  btn.disabled = true;
+  setText($("genMsg"), "正在生成…");
+  try {
+    const payload = { request: $("genRequest").value.trim() };
+    const tplId = $("genTemplate").value;
+    if (tplId) payload.template_id = Number(tplId);
+    const d = await api("/api/customers/" + CURRENT + "/generate", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    $("genText").value = d.output;
+    $("genOut").hidden = false;
+    setText($("genMsg"), "已生成（" + d.model + "）。改完再复制——AI 出草稿，人负责。");
+    await loadGenerations(CURRENT);
+    await loadCustomers(); // 模板的使用次数变了，列表上的「用过 N 次」要跟上
+  } catch (err) {
+    setText($("genMsg"), err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function copyGen() {
+  const text = $("genText").value;
+  try {
+    await navigator.clipboard.writeText(text);
+    setText($("genMsg"), "已复制。");
+  } catch (_) {
+    // 浏览器不给剪贴板权限时，至少帮人选中，别让人自己拖
+    $("genText").select();
+    setText($("genMsg"), "浏览器不让直接复制，已帮你选中，按 Ctrl+C。");
+  }
+}
+
 // ---------- 入口 ----------
 
 // 搜索：敲字后停 250ms 再查，免得每按一个键都打一次接口
@@ -585,6 +929,16 @@ function bind() {
     loadCustomers();
   });
   $("dStage").addEventListener("change", changeStage);
+
+  // 话术库
+  $("saveTemplate").addEventListener("click", saveTemplate);
+  $("cancelEdit").addEventListener("click", cancelEditTemplate);
+  $("addTag").addEventListener("click", addTag);
+  $("tplSearch").addEventListener("input", onTplSearchInput);
+
+  // 生成话术
+  $("doGenerate").addEventListener("click", doGenerate);
+  $("copyGen").addEventListener("click", copyGen);
 
   $("createCustomer").addEventListener("click", createCustomer);
   // 「建档 ≤30 秒」：每个框都能回车提交，手不用离开键盘

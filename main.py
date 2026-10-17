@@ -6,13 +6,13 @@ import httpx
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
 import auth
 import db
 from db import get_analysis, init_db, list_history, save_analysis
-from llm import MODEL, analyze_company
+from llm import MODEL, analyze_company, generate_pitch
 
 BASE_DIR = Path(__file__).parent  # 项目根目录；拼路径都用它
 
@@ -410,6 +410,166 @@ def api_delete_product(product_id: int, request: Request):
     if not db.delete_product(product_id):
         raise HTTPException(status_code=404, detail="产品不存在")
     return {"ok": True}
+
+
+# ==================================================================
+# 第 3 期：话术库（模板 + 标签，团队共享）
+# ==================================================================
+
+# 标签分三组——不是一棵分类树。三个维度会交叉（FB 来的也可能是代理商），
+# 做成树必然卡在「这条该挂哪个枝」，标签可以一次挂多个。
+TAG_GROUPS = ("来源", "类型", "场景")
+
+
+class TemplateRequest(BaseModel):
+    title: str
+    body: str
+    tag_ids: list[int] = Field(default_factory=list)
+
+
+class TemplatePatch(BaseModel):
+    title: str | None = None
+    body: str | None = None
+    tag_ids: list[int] | None = None
+
+
+class TagRequest(BaseModel):
+    grp: str
+    name: str
+
+
+class TagPatch(BaseModel):
+    is_active: bool
+
+
+@app.get("/api/tags")
+def api_list_tags(request: Request, include_inactive: bool = False):
+    """标签清单。默认只给在用的；`include_inactive=1` 连停用的一起给（管理时用）。"""
+    auth.require_user(request)
+    return {"groups": list(TAG_GROUPS), "items": db.list_tags(include_inactive)}
+
+
+@app.post("/api/tags")
+def api_create_tag(req: TagRequest, request: Request):
+    auth.require_user(request)
+    grp = req.grp.strip()
+    name = req.name.strip()
+    if grp not in TAG_GROUPS:
+        raise HTTPException(status_code=400, detail=f"标签组只能是：{' / '.join(TAG_GROUPS)}")
+    if not name:
+        raise HTTPException(status_code=400, detail="标签名不能为空")
+    return {"id": db.create_tag(grp, name)}
+
+
+@app.patch("/api/tags/{tag_id}")
+def api_set_tag_active(tag_id: int, req: TagPatch, request: Request):
+    """停用 / 重新启用标签。停用后它从下拉里消失，但老模板上仍然看得到。"""
+    auth.require_user(request)
+    if not db.set_tag_active(tag_id, req.is_active):
+        raise HTTPException(status_code=404, detail="标签不存在")
+    return {"ok": True}
+
+
+@app.get("/api/templates")
+def api_list_templates(request: Request, q: str = "", tag_id: int | None = None):
+    """模板列表。用得多的排前面。"""
+    auth.require_user(request)
+    return {"items": db.list_templates(q, tag_id)}
+
+
+@app.post("/api/templates")
+def api_create_template(req: TemplateRequest, request: Request):
+    user = auth.require_user(request)
+    title = req.title.strip()
+    body = req.body.strip()
+    if not title or not body:
+        raise HTTPException(status_code=400, detail="标题和正文都要填")
+    tid = db.create_template(user["id"], title, body, req.tag_ids)
+    return db.get_template(tid)
+
+
+@app.get("/api/templates/{template_id}")
+def api_get_template(template_id: int, request: Request):
+    auth.require_user(request)
+    t = db.get_template(template_id)
+    if t is None:
+        raise HTTPException(status_code=404, detail="模板不存在")
+    return t
+
+
+@app.patch("/api/templates/{template_id}")
+def api_patch_template(template_id: int, req: TemplatePatch, request: Request):
+    auth.require_user(request)
+    fields = {k: v for k, v in req.model_dump().items() if v is not None}
+    if "title" in fields and not fields["title"].strip():
+        raise HTTPException(status_code=400, detail="标题不能为空")
+    if "body" in fields and not fields["body"].strip():
+        raise HTTPException(status_code=400, detail="正文不能为空")
+    if not db.update_template(template_id, **fields):
+        raise HTTPException(status_code=404, detail="模板不存在")
+    return db.get_template(template_id)
+
+
+@app.delete("/api/templates/{template_id}")
+def api_delete_template(template_id: int, request: Request):
+    auth.require_user(request)
+    if not db.delete_template(template_id):
+        raise HTTPException(status_code=404, detail="模板不存在")
+    return {"ok": True}
+
+
+# ---- 按客户生成话术（AI 出草稿，人过一遍再发） ----
+
+
+class GenerateRequest(BaseModel):
+    template_id: int | None = None
+    request: str = ""  # 「想达成什么」，例如：让他回邮件确认数量
+
+
+@app.post("/api/customers/{customer_id}/generate")
+def api_generate(customer_id: int, req: GenerateRequest, request: Request):
+    """按这个客户生成一条话术，并把它存下来。
+
+    存下来的理由：不存等于「用过就没了」，下次又得重写一遍，回到扒聊天记录。
+    """
+    user = auth.require_user(request)
+    customer = _visible_customer(customer_id, user)  # 看不到这个客户就别想生成
+    template = None
+    if req.template_id:
+        template = db.get_template(req.template_id)
+        if template is None:
+            raise HTTPException(status_code=404, detail="模板不存在")
+    try:
+        text = generate_pitch(customer, template["body"] if template else "", req.request)
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"调用模型失败：HTTP {e.response.status_code}（{e.response.text[:120]}）",
+        )
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=502, detail=f"连不上模型服务：{type(e).__name__}")
+    if not text:
+        raise HTTPException(status_code=502, detail="模型没有返回内容，再试一次")
+
+    gid = db.add_generation(
+        customer_id, req.template_id, user["id"], req.request.strip(), text, MODEL
+    )
+    if template:
+        db.bump_template_use(template["id"])
+    return {
+        "id": gid,
+        "output": text,
+        "model": MODEL,
+        "template_title": template["title"] if template else None,
+    }
+
+
+@app.get("/api/customers/{customer_id}/generations")
+def api_list_generations(customer_id: int, request: Request):
+    """这个客户生成过什么。权限和客户本身一致——看不到客户就看不到记录。"""
+    user = auth.require_user(request)
+    _visible_customer(customer_id, user)
+    return {"items": db.list_generations(customer_id)}
 
 
 # ==================================================================

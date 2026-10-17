@@ -14,6 +14,7 @@
     <div class="brand">外贸客户工作台</div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="customers">客户</button>
+      <button class="nav-item" data-view="templates">话术库</button>
       <button class="nav-item" data-view="products">产品目录</button>
       <a class="nav-item" href="/">背调工具 ↗</a>
     </nav>
@@ -100,6 +101,24 @@
               <ul id="fileList" class="file-list"></ul>
 
               <hr>
+              <h3 class="section-title">生成话术</h3>
+              <div class="newrow">
+                <select id="genTemplate" class="tool-select" aria-label="选模板"></select>
+              </div>
+              <div class="newrow" style="margin-top:8px">
+                <input id="genRequest" type="text" placeholder="想达成什么？例如：让他回邮件确认数量">
+                <button id="doGenerate">生成</button>
+              </div>
+              <p id="genMsg" class="status"></p>
+              <div id="genOut" hidden class="gen-out">
+                <textarea id="genText" rows="5"></textarea>
+                <div class="newrow" style="margin-top:8px">
+                  <button id="copyGen" class="ghost">复制</button>
+                </div>
+              </div>
+              <ul id="genList" class="fu-list"></ul>
+
+              <hr>
               <h3 class="section-title">转给同事</h3>
               <div class="newrow">
                 <select id="transferTo"></select>
@@ -126,6 +145,44 @@
           <section class="card">
             <h2>产品 <span id="prodCount" class="hint"></span></h2>
             <ul id="prodList" class="cust-list"></ul>
+          </section>
+        </div>
+      </div>
+
+      <!-- 视图三：话术库（模板 + 标签，团队共享） -->
+      <div id="viewTemplates" class="view" hidden>
+        <div class="pane-main">
+          <section class="card">
+            <h2 id="tplFormTitle">新建话术模板</h2>
+            <div class="newrow">
+              <input id="tplTitle" type="text" placeholder="标题，例如：首次触达（FB 来的个人买家）">
+            </div>
+            <textarea id="tplBody" rows="5"
+              placeholder="正文。可以用占位符：{客户名} {公司} {国家} {产品} {价格}"></textarea>
+            <p class="hint">占位符在生成时自动替换成这个客户的信息——没有占位符，模板就没法复用。</p>
+
+            <h3 class="section-title">标签（可多选，三组）</h3>
+            <div id="tplTagPicker" class="tag-picker"></div>
+            <div class="newrow tag-newrow">
+              <select id="newTagGrp" class="tool-select" aria-label="标签组"></select>
+              <input id="newTagName" type="text" placeholder="新标签名">
+              <button id="addTag" class="ghost">加标签</button>
+            </div>
+
+            <div class="newrow" style="margin-top:12px">
+              <button id="saveTemplate">保存模板</button>
+              <button id="cancelEdit" class="ghost" hidden>取消编辑</button>
+            </div>
+            <p id="tplMsg" class="status"></p>
+          </section>
+
+          <section class="card">
+            <h2>话术模板 <span id="tplCount" class="hint"></span></h2>
+            <div class="list-tools">
+              <input id="tplSearch" type="search" class="search" placeholder="搜标题 / 正文">
+            </div>
+            <div id="tplFilterTags" class="tag-picker filter"></div>
+            <ul id="tplList" class="cust-list"></ul>
           </section>
         </div>
       </div>
