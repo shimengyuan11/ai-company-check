@@ -815,3 +815,92 @@ button:not(.ghost):not(.tag-chip):not(.nav-item):not(.cal-cell):active { transfo
   flex: 1 1 auto; min-width: 0;
 }
 .detail-top .head-actions { width: 100%; justify-content: flex-start; margin-top: 8px; }
+
+/* ============================================================
+   登录页动态地球（纯 CSS，无第三方库）+ 详情栏资料框配色
+   ============================================================ */
+.auth-shell { position: relative; overflow: hidden; }
+.auth-card { position: relative; z-index: 1; }
+
+.auth-globe {
+  position: absolute; right: 3vw; top: 50%; transform: translateY(-50%);
+  width: 320px; height: 320px; pointer-events: none; z-index: 0; opacity: .95;
+}
+.globe-core {
+  position: absolute; inset: 0; border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%,
+    rgba(96, 165, 250, .55), rgba(30, 58, 138, .38) 46%, rgba(8, 18, 40, .12) 74%);
+  box-shadow: inset -20px -20px 54px rgba(2, 6, 23, .7), 0 0 70px rgba(59, 130, 246, .3);
+}
+/* 经线：竖条纹 + 圆形裁剪 + 自转 */
+.globe-grid {
+  position: absolute; inset: 0; border-radius: 50%; overflow: hidden;
+  background: repeating-linear-gradient(90deg,
+    transparent 0 14px, rgba(96, 165, 250, .22) 14px 15px);
+  animation: globe-spin 26s linear infinite;
+  -webkit-mask-image: radial-gradient(circle, #000 60%, transparent 76%);
+  mask-image: radial-gradient(circle, #000 60%, transparent 76%);
+}
+/* 纬线：几道横向弧 */
+.globe-grid::after {
+  content: ""; position: absolute; inset: 0; border-radius: 50%;
+  background:
+    linear-gradient(transparent 46%, rgba(96, 165, 250, .30) 46.5%, transparent 47.2%),
+    linear-gradient(transparent 28%, rgba(96, 165, 250, .18) 28.5%, transparent 29.2%),
+    linear-gradient(transparent 64%, rgba(96, 165, 250, .18) 64.5%, transparent 65.2%),
+    linear-gradient(transparent 12%, rgba(96, 165, 250, .12) 12.5%, transparent 13.2%),
+    linear-gradient(transparent 84%, rgba(96, 165, 250, .12) 84.5%, transparent 85.2%);
+}
+.globe-shine {
+  position: absolute; inset: 0; border-radius: 50%;
+  background: radial-gradient(circle at 30% 22%, rgba(255, 255, 255, .30), transparent 44%);
+}
+.orbit { position: absolute; inset: -26px; border-radius: 50%; border: 1px solid rgba(96, 165, 250, .18); }
+.orbit-a { transform: rotate(-18deg) scaleY(.42); animation: orbit-a 34s linear infinite; }
+.orbit-b {
+  inset: -54px; transform: rotate(24deg) scaleY(.55);
+  border-style: dashed; border-color: rgba(34, 211, 238, .16);
+  animation: orbit-b 46s linear infinite reverse;
+}
+.globe-node {
+  position: absolute; width: 7px; height: 7px; border-radius: 50%;
+  background: #22d3ee;
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, .18), 0 0 12px rgba(34, 211, 238, .85);
+  animation: node-pulse 3.2s ease-in-out infinite;
+}
+.node-a { left: 22%; top: 34%; }
+.node-b { right: 18%; top: 52%; background: #60a5fa; box-shadow: 0 0 0 3px rgba(96, 165, 250, .18), 0 0 12px rgba(96, 165, 250, .85); animation-delay: .8s; }
+.node-c { left: 44%; bottom: 20%; background: #a78bfa; box-shadow: 0 0 0 3px rgba(167, 139, 250, .18), 0 0 12px rgba(167, 139, 250, .85); animation-delay: 1.6s; }
+.node-d { right: 30%; top: 18%; animation-delay: 2.4s; }
+
+@keyframes globe-spin { to { transform: rotate(360deg); } }
+@keyframes orbit-a { to { transform: rotate(342deg) scaleY(.42); } }
+@keyframes orbit-b { to { transform: rotate(384deg) scaleY(.55); } }
+@keyframes node-pulse {
+  0%, 100% { opacity: .5; transform: scale(.9); }
+  50% { opacity: 1; transform: scale(1.18); }
+}
+/* 窄屏收起地球，别和表单抢地方 */
+@media (max-width: 1180px) { .auth-globe { display: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .globe-grid, .orbit, .globe-node { animation: none !important; }
+}
+
+/* ---------- 详情栏「客户资料」框：给个浅蓝渐变底，像个信息卡 ---------- */
+.detail-head {
+  background: linear-gradient(135deg, #f7faff 0%, #eef4ff 55%, #e9f1ff 100%);
+  border: 1px solid #e0e9ff;
+  border-radius: var(--r-3);
+  padding: var(--sp-3) var(--sp-3) var(--sp-2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), 0 2px 12px rgba(37, 99, 235, .06);
+  margin-bottom: var(--sp-3);
+}
+/* 阶段行也做成一个浅色块，和资料区呼应 */
+.stage-row {
+  background: rgba(255, 255, 255, .78);
+  border: 1px solid rgba(37, 99, 235, .12);
+  border-radius: var(--r-2);
+  padding: 6px 10px;
+  margin-top: var(--sp-2);
+}
+.stage-label { color: var(--primary); font-weight: 700; }

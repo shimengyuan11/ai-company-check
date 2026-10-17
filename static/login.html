@@ -30,6 +30,18 @@
         <b>建档 3 个字段，跟进 1 个框</b>
         <span>姓名 / 号码 / 国家，回车就存；跟进敲完回车就记下。</span>
       </li>
+      <li>
+        <b>跟到哪一步，一眼看得出</b>
+        <span>阶段标记 + 未联系天数。3 / 5 / 7 / 10 天没联系的客户，一筛就出来。</span>
+      </li>
+      <li>
+        <b>话术库 + AI 草稿</b>
+        <span>常用话术存一次反复用；针对某个客户生成草稿时，会参考你最近的跟进记录。</span>
+      </li>
+      <li>
+        <b>日历跟进，不漏人</b>
+        <span>给客户排哪天联系，当天在导航上挂红点——昨天漏掉的今天接着提醒。</span>
+      </li>
     </ul>
 
     <p class="auth-side-foot"><a href="/">AI 公司背调工具 ↗</a></p>
@@ -62,7 +74,21 @@
     </form>
   </main>
 
+  <!-- 动态地球：全球业务的视觉符号。纯 CSS 绘制 + 旋转，不引第三方库 -->
+  <div class="auth-globe" aria-hidden="true">
+    <div class="globe-core"></div>
+    <div class="globe-grid"></div>
+    <div class="globe-shine"></div>
+    <div class="orbit orbit-a"></div>
+    <div class="orbit orbit-b"></div>
+    <span class="globe-node node-a"></span>
+    <span class="globe-node node-b"></span>
+    <span class="globe-node node-c"></span>
+    <span class="globe-node node-d"></span>
+  </div>
+
 </div>
 <script src="/static/login.js"></script>
 </body>
 </html>
+
