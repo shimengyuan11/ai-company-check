@@ -1,39 +1,61 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width,initial-scale=1">
-        <title>AI 公司背调系统</title>
-  <link rel="stylesheet" href="/static/style.css">
-    </head>
-    <body>
-        <header class="appbar">
-          <div class="appbar-inner">
-            <span class="brand">AI 公司背调系统</span>
-            <div class="appbar-right">
-              <a href="/app">客户工作台 →</a>
-            </div>
-          </div>
-        </header>
-        <main class="wrap">
-            <p class="hint">输入公司名，生成一份背调分析。AI 生成，仅供线索参考，重要决策请人工核实。</p>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>公司背调 · Meridian</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="shell">
 
-    <section class="card">
-      <input id="company" type="text" placeholder="公司名，例如：比亚迪" autocomplete="off">
-      <input id="extra" type="text" placeholder="补充信息（选填）：国家 / 行业 / 官网" autocomplete="off">
-      <button id="go">开始背调</button>
-      <p id="status" class="status"></p>
-    </section>
-    <section class="card">
-      <h2 id="resultTitle">本次结果</h2>
-      <pre id="result">（还没开始）</pre>
-    </section>
+  <!-- 左：导航栏。与工作台同一套外壳，只是这一栏不需要登录 -->
+  <aside class="sidebar">
+    <div class="brandmark">
+      <span class="brandmark-word">MERIDIAN</span>
+      <span class="brandmark-sub">外贸客户工作台</span>
+    </div>
+    <nav class="nav">
+      <a class="nav-item active" href="/">公司背调</a>
+      <a class="nav-item" href="/app">客户信息</a>
+      <a class="nav-item" href="/login">登录 / 注册</a>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="build-tag">公开工具 · 免登录可用</div>
+    </div>
+  </aside>
 
-    <section class="card">
-      <h2>历史记录</h2>
-      <ul id="history"></ul>
-    </section>
-        </main>
-        <script src="/static/app.js"></script>
-    </body>
+  <!-- 右：内容区 -->
+  <main class="content">
+    <div class="page-narrow">
+
+      <header class="page-head">
+        <h1>公司背调</h1>
+        <p class="hint">输入公司名，生成一份背调分析。AI 生成，仅供线索参考，重要决策请人工核实。</p>
+      </header>
+
+      <section class="card">
+        <div class="newrow">
+          <input id="company" type="text" placeholder="公司名，例如：比亚迪" autocomplete="off">
+          <input id="extra" type="text" placeholder="补充信息（选填）：国家 / 行业 / 官网" autocomplete="off">
+          <button id="go">开始背调</button>
+        </div>
+        <p id="status" class="status"></p>
+      </section>
+
+      <section class="card">
+        <h2 id="resultTitle">本次结果</h2>
+        <pre id="result">（还没开始）</pre>
+      </section>
+
+      <section class="card">
+        <h2>历史记录</h2>
+        <ul id="history"></ul>
+      </section>
+
+    </div>
+  </main>
+</div>
+<script src="/static/app.js"></script>
+</body>
 </html>

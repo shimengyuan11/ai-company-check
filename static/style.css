@@ -912,14 +912,17 @@ button:not(.ghost):not(.tag-chip):not(.nav-item):not(.cal-cell):active { transfo
 }
 
 /* ============================================================
-   SMY 连写 logo + 同心光环（替换掉那个不像样的地球）
+   Meridian 字标 + 同心光环
+   SMY 那版是三个字母硬挤成一组，看不出是个名字。现在换成：
+   小字号、宽字距的大写罗马字 —— 高端感来自留白与对齐，不来自字大。
    ============================================================ */
 .auth-logo {
   font-family: "Segoe UI", system-ui, sans-serif;
-  font-size: 42px; font-weight: 900; line-height: 1;
-  letter-spacing: -.14em;                    /* 三个字母紧贴成一组 */
-  padding-right: .12em;                      /* 补偿负字距把右侧裁掉 */
-  margin-bottom: var(--sp-4);
+  font-size: 30px; font-weight: 700; line-height: 1;
+  letter-spacing: .26em;                     /* 拉开字距，读出「品牌」而不是「缩写」 */
+  padding-right: .1em;                       /* 补偿字距把右侧裁掉 */
+  margin-bottom: var(--sp-3);
+  width: fit-content;
   background: linear-gradient(135deg, #ffffff 0%, #93c5fd 48%, #22d3ee 100%);
   -webkit-background-clip: text; background-clip: text; color: transparent;
   filter: drop-shadow(0 8px 22px rgba(59, 130, 246, .45));
@@ -970,3 +973,28 @@ button:not(.ghost):not(.tag-chip):not(.nav-item):not(.cal-cell):active { transfo
 }
 @media (max-width: 1180px) { .auth-orbit { display: none; } }
 @media (prefers-reduced-motion: reduce) { .spinner, .core-glow { animation: none !important; } }
+
+/* ============================================================
+   品牌字标（侧栏 / 顶栏通用）：MERIDIAN + 一行中文副标
+   两行都靠字距对齐，读起来像一个牌子而不是一句标题。
+   ============================================================ */
+.brandmark { display: flex; flex-direction: column; gap: 4px; }
+.brandmark-word {
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 15px; font-weight: 700; line-height: 1.15;
+  letter-spacing: .24em; text-indent: .02em;
+  color: #fff;
+}
+.brandmark-sub {
+  font-size: 10px; line-height: 1.5; letter-spacing: .26em;
+  color: rgba(226, 232, 240, .40);
+}
+
+/* ============================================================
+   背调页（/）：外壳与工作台同构（左导航 + 内容区），
+   内容收窄到 900 —— 背调结果是一长篇文字，行太长就读不动了。
+   ============================================================ */
+.page-narrow { max-width: 900px; }
+.page-head { margin-bottom: var(--sp-4); }
+.page-head h1 { font-size: var(--fs-6); letter-spacing: -.02em; margin-bottom: var(--sp-1); }
+.page-head .hint { max-width: 640px; }
