@@ -4,7 +4,7 @@ from urllib.parse import quote
 
 import httpx
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
@@ -406,9 +406,21 @@ def index():
     return FileResponse(BASE_DIR / "static" / "index.html")
 
 
+@app.get("/login")
+def login_page():
+    """独立登录页。未登录的 /app 会被送到这里，登录成功再跳回去。"""
+    return FileResponse(BASE_DIR / "static" / "login.html")
+
+
 @app.get("/app")
-def workspace():
-    """V2：外贸客户工作台（登录后使用）。"""
+def workspace(request: Request):
+    """V2：外贸客户工作台（登录后使用）。
+
+    **未登录在服务端就挡住**（302 去登录页，带 next 回来）——比「前端藏内容」稳：
+    脚本出错时也不会停在一片空白上。真正的权限仍然在每个接口里，这里只是少让人撞墙。
+    """
+    if auth.current_user(request) is None:
+        return RedirectResponse("/login?next=/app", status_code=302)
     return FileResponse(BASE_DIR / "static" / "workspace.html")
 
 

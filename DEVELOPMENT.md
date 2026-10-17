@@ -2,20 +2,26 @@
 
 > `README.md` 讲"这个项目是什么、怎么用"；这份讲"怎么继续开发它"。
 
-## 现在在哪（2026-10-16 · 新会话从这里读起）
+## 现在在哪（2026-10-17 · 新会话从这里读起）
 
 **线上**：https://ai-company-check.onrender.com
+- `/login` = **登录 / 注册（独立页）**——未登录访问 `/app` 会被服务端 302 送到这里，带 `next` 登录后跳回去
 - `/app` = 外贸客户工作台（V2，当前主线）
 - `/` = AI 公司背调（V1，仍在，但**还是旧顶栏样式**，没跟着 V2 的侧栏改——见下"下一步"）
 
 **一句话说清两个版本**：V1 是"一次性情报工具"（输入公司名出背调）；V2 是"给外贸业务天天用的客户工作台"，
 背调将来要变成 V2 建档时的入口（还没做）。
 
-**V2 已完成两期**（提交 `963c180` 为界）：
+**V2 已完成两期 + 登录页**（提交 `963c180` 为界）：
 
 - **第 1 期**：登录（邀请码注册、fail-closed）/ 客户建档 / 写跟进 / 搜索 / 移交 / 删除
 - **第 2 期**：三栏外壳（左导航 / 中列表 / 右详情，流式宽）+ 下拉复用（options 团队词典）
   + 附件上传（PI / 报价单，存 Postgres bytea）+ 产品目录（团队共享）
+- **登录页（2026-10-17）**：`/login` 独立页（左门面 + 右表单）；未登录的 `/app` 在**服务端** 302 过去，
+  不再靠前端藏卡片。工作台里那份内嵌登录卡已删掉——登录只有一处。
+
+**权限与移交已有自动化护栏**：`tests/test_permissions.py`。客户的「各管各的」是全项目最不能错的一条，
+以前只靠人工点一遍；现在 A/B 隔离、管理员可见、移交换人、尾号 9 位查重、未登录拦截都有测试钉着。
 
 **必须记住的约定**（改代码前先读这几条，否则会改坏）：
 
@@ -27,17 +33,28 @@
 | **选项库 / 产品目录是共享的** | 故意不分归属（不是客户隐私）；所以**别拿测试数据污染它们** |
 | **时间戳一律存 UTC** | 显示时才转本地；`db.save_analysis` 等都用 `_now()` |
 | **视觉走 CSS 变量** | 颜色/间距/圆角在 `style.css` 顶部 `:root`；**别裸写 hex** |
-| **验证方式** | 接口层用 `fastapi.testclient`；前端用无头 Chrome 驱动**真实页面**（见下"怎么验"） |
+| **验证方式** | 接口、权限、移交用 `tests/test_permissions.py`（`fastapi.testclient`，临时 schema 隔离）；前端用无头 Chrome 驱动**真实页面**（见下"怎么验"） |
+| **门禁在服务端，不在前端** | 未登录访问 `/app` 由服务端 302 到 `/login`；每个接口自己 `require_user` + 权限 SQL。前端藏按钮不算数 |
 
 **"快"的判据**（第 1 期定的硬指标，别破坏）：建档必填 **3 个字段**（姓名/号码/国家）、能回车提交；
 写跟进**只有 1 个输入框**、回车就存。
 
 **下一步（没做的）**：
 
-1. 背调页（`/`）统一成同一条左侧栏——现在两页不像一套东西
-2. 第 3 期：话术库（模板 + **标签**，不是分类树）+ 针对客户生成话术（依赖 LLM，要联网）
+1. 第 3 期：话术库（模板 + **标签**，不是分类树）+ 针对客户生成话术（依赖 LLM，要联网）
+2. 背调页（`/`）统一成同一条左侧栏——**动手前先定一件事**：`/` 现在是公开页（不需要登录），
+   要不要变成登录后的一栏？定了才好改，否则容易把公开入口一起关掉
+3. `stage` 字段（新线索 / 已联系 / 已报价 / 成交 / 流失）库和接口都有，前端还没用——
+   客户列表上看不出谁到哪一步了
 
 **怎么验（这套在本项目很管用）**：
+- **自动化回归（先跑这个）**：`./.venv/Scripts/python.exe -m unittest discover -s tests -v`
+  - 覆盖：A/B 客户隔离、管理员可见全部、移交换主人、尾号 9 位查重 409、未登录拦截、`/app` 302 门禁
+  - 隔离：在同一个 Neon 库里开临时 schema（`rivet_test_xxxxxxxx`）并把连接 `search_path` 钉进去，
+    跑完 drop——**不碰生产数据**，也不碰共享的 options / products
+  - 坑一：Neon 的**池化**端点（host 带 `-pooler`）不接受 `search_path` 启动参数，测试里去掉 `-pooler` 走直连
+  - 坑二：**跑一次约 3 分钟**——每条 SQL 都要走一趟远程库，11 个用例就是这个量级。
+    单跑一个用例快得多：`./.venv/Scripts/python.exe tests/test_permissions.py PermissionTest.test_xxx -v`
 - 起本地服务：`SIGNUP_CODE=testcode SESSION_SECRET=x .venv/Scripts/python.exe -m uvicorn main:app --port 8133`
 - 前端：写一个探针页放进 `static/`，用 **iframe 加载 `/app`** 再驱动它（`--dump-dom` 有时不退出，**改用 `--screenshot` 看图**更稳）
 - 坑：iframe 里弹的 `confirm` 要在 **iframe 自己的 window** 上覆盖，覆盖父窗口无效（headless 会永久卡住）
@@ -77,10 +94,12 @@ uvicorn main:app --reload
 
 | 文件 | 职责 |
 |---|---|
-| `main.py` | FastAPI 应用与路由：`/`（页面）、`POST /analyze`、`GET /history`、`GET /history/{id}`；启动时调用 `init_db()` |
+| `main.py` | FastAPI 应用与路由：V1（`/`、`POST /analyze`、`GET /history[/{id}]`）+ V2（`/login`、`/app`、`/api/*` 客户/跟进/移交/附件/产品/选项）；启动时 `init_db()` |
+| `auth.py` | 登录三件事：密码只存 bcrypt 哈希、当前用户从会话读、邀请码注册（fail-closed） |
+| `tests/test_permissions.py` | 权限与移交回归测试（临时 schema 隔离，不碰生产数据） |
 | `llm.py` | 提示词 + 调 LLM（httpx；显式 `trust_env=False`，避免请求被系统代理劫持） |
 | `db.py` | Postgres 操作（驱动 `psycopg` + 连接池 `psycopg_pool`）：建表 / 存一条 / 读列表 / 读单条；连接串取 `DATABASE_URL`；时间戳统一存 UTC；表结构见 `PRD.md` 的字段表 |
-| `static/` | 前端三件套；`app.js` 用 `fetch` 调 `POST /analyze`、`GET /history` 与 `GET /history/{id}`（点历史展开详情） |
+| `static/` | `index.html` + `app.js` = V1 背调页；`workspace.html` + `workspace.js` = V2 工作台；`login.html` + `login.js` = 独立登录页；样式全在 `style.css`（顶部 `:root` 是设计变量） |
 
 ## 数据与部署的取舍
 
@@ -110,6 +129,9 @@ uvicorn main:app --reload
 - [x] 数据层从 SQLite 换成托管 Postgres（历史不再因重新部署清空）——2026-10-16 线上实测通过
 - [x] 时区统一存 UTC + 前端转本地显示（本机 UTC+8 与服务器 UTC 混写曾差 8 小时）
 - [x] 数据库连接改用连接池（远程库每次建连 ~2 秒，页面加载曾卡 2~3 秒）
+- [x] 独立登录页 `/login` + `/app` 服务端门禁（2026-10-17；工作台里的内嵌登录卡已删）
+- [x] 权限 / 移交 / 查重 / 未登录拦截的自动化回归测试（`tests/test_permissions.py`，临时 schema 隔离）
+- [ ] 第 3 期：话术库（模板 + 标签 + 生成话术）——未开工
 
 ## 走过的岔路（否决过的方案与原因）
 

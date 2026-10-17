@@ -26,19 +26,7 @@
   <!-- ============ 右：内容区 ============ -->
   <main class="content">
 
-    <!-- 未登录 -->
-    <section id="loginCard" class="card auth-card" hidden>
-      <h2 id="authTitle">登录</h2>
-      <input id="username" type="text" placeholder="用户名" autocomplete="username">
-      <input id="password" type="password" placeholder="密码" autocomplete="current-password">
-      <input id="code" type="text" placeholder="邀请码（注册时需要）" autocomplete="off" hidden>
-      <button id="submitAuth" style="width:100%;margin-top:4px">登录</button>
-      <p class="hint" style="text-align:center;margin-top:12px">
-        <a href="#" id="toggleMode">没有账号？去注册</a>
-      </p>
-      <p id="authMsg" class="status" style="text-align:center"></p>
-    </section>
-
+    <!-- 未登录不会走到这里：服务端已经把 /app 重定向到 /login -->
     <!-- 已登录 -->
     <section id="app" hidden>
 

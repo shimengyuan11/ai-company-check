@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>登录 · 外贸客户工作台</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="auth-page">
+<div class="auth-shell">
+
+  <!-- 左：门面。说清这套系统给谁用、解决什么，登录页也是产品的一部分 -->
+  <aside class="auth-side">
+    <div>
+      <span class="brand">外贸客户工作台</span>
+      <p class="auth-tagline">客户与跟进，一处管完</p>
+    </div>
+
+    <ul class="auth-points">
+      <li>
+        <b>只看得到自己的客户</b>
+        <span>登录后列表里只有你名下的客户，同事之间互相看不到。</span>
+      </li>
+      <li>
+        <b>客户能转给同事</b>
+        <span>人走了，把客户移交给接手的人；对方打开就知道聊到哪一步。</span>
+      </li>
+      <li>
+        <b>建档 3 个字段，跟进 1 个框</b>
+        <span>姓名 / 号码 / 国家，回车就存；跟进敲完回车就记下。</span>
+      </li>
+    </ul>
+
+    <p class="auth-side-foot"><a href="/">AI 公司背调工具 ↗</a></p>
+  </aside>
+
+  <!-- 右：表单 -->
+  <main class="auth-main">
+    <form class="auth-card" id="authForm">
+      <h1 id="authTitle">登录</h1>
+      <p class="hint" id="authSub">用账号登进来，看到的只有自己的客户。</p>
+
+      <label class="field">
+        <span class="field-label">用户名</span>
+        <input id="username" type="text" placeholder="你的登录名" autocomplete="username" required>
+      </label>
+
+      <label class="field">
+        <span class="field-label">密码</span>
+        <input id="password" type="password" placeholder="至少 6 位" autocomplete="current-password" required>
+      </label>
+
+      <label class="field" id="codeField" hidden>
+        <span class="field-label">邀请码</span>
+        <input id="code" type="text" placeholder="向管理员要" autocomplete="off">
+      </label>
+
+      <button id="submitAuth" type="submit">登录</button>
+      <p id="authMsg" class="status" style="text-align:center"></p>
+      <p class="hint auth-switch"><a href="#" id="toggleMode">没有账号？用邀请码注册</a></p>
+    </form>
+  </main>
+
+</div>
+<script src="/static/login.js"></script>
+</body>
+</html>

@@ -3,7 +3,6 @@
 
 const $ = (id) => document.getElementById(id);
 let CURRENT = null; // 当前打开的客户 id
-let SIGNUP_OPEN = true; // 注册是否开放（启动时问后端）
 let SEARCH = ""; // 当前搜索词
 
 // ---------- 小工具 ----------
@@ -43,34 +42,15 @@ const setText = (el, t) => { el.textContent = t || ""; };
 // 客户在界面上怎么称呼：优先姓名，没姓名就退到公司名
 const titleOf = (c) => c.contact_name || c.company || "（未填姓名）";
 
-// ---------- 登录 / 注册 ----------
+// ---------- 登录 / 退出 ----------
+// 登录界面在独立的 /login 页（服务端把未登录的 /app 302 过去）。
+// 这里只负责两件事：拿不到用户就回登录页；退出也回登录页。
 
-let registerMode = false;
-
-function renderAuthMode() {
-  $("authTitle").textContent = registerMode ? "注册" : "登录";
-  $("submitAuth").textContent = registerMode ? "注册并进入" : "登录";
-  $("toggleMode").textContent = registerMode ? "已有账号？去登录" : "没有账号？去注册";
-  $("code").hidden = !registerMode;
-  // 注册关着的时候直接把话说清楚，别让人填完一整个表单才吃一个 403
-  setText(
-    $("authMsg"),
-    registerMode && !SIGNUP_OPEN
-      ? "注册已关闭：需要管理员先在服务端配置 SIGNUP_CODE（邀请码）才能注册。"
-      : ""
-  );
-}
-
-function showLogin() {
-  $("loginCard").hidden = false;
-  $("app").hidden = true;
-  $("logout").hidden = true;
-  setText($("whoami"), "");
-  $("username").focus();
+function goLogin() {
+  location.replace("/login?next=/app");
 }
 
 function showApp(user) {
-  $("loginCard").hidden = true;
   $("app").hidden = false;
   $("logout").hidden = false;
   setText($("whoami"), user.display_name + (user.is_admin ? "（管理员）" : ""));
@@ -80,29 +60,10 @@ function showApp(user) {
   loadCustomers();
 }
 
-async function submitAuth() {
-  const username = $("username").value.trim();
-  const password = $("password").value;
-  const code = $("code").value.trim();
-  if (!username || !password) return setText($("authMsg"), "用户名和密码都要填");
-  try {
-    const body = registerMode ? { username, password, code } : { username, password };
-    const data = await api(registerMode ? "/api/register" : "/api/login", {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
-    $("password").value = "";
-    $("code").value = "";
-    showApp(data.user);
-  } catch (err) {
-    setText($("authMsg"), err.message);
-  }
-}
-
 async function logout() {
   try { await api("/api/logout", { method: "POST" }); } catch (_) {}
   CURRENT = null;
-  showLogin();
+  goLogin();
 }
 
 // ---------- 客户列表 ----------
@@ -528,14 +489,6 @@ function onSearchInput() {
 }
 
 function bind() {
-  $("submitAuth").addEventListener("click", submitAuth);
-  $("password").addEventListener("keydown", (e) => { if (e.key === "Enter") submitAuth(); });
-  $("code").addEventListener("keydown", (e) => { if (e.key === "Enter") submitAuth(); });
-  $("toggleMode").addEventListener("click", (e) => {
-    e.preventDefault();
-    registerMode = !registerMode;
-    renderAuthMode();
-  });
   $("logout").addEventListener("click", logout);
   $("searchBox").addEventListener("input", onSearchInput);
 
@@ -570,19 +523,15 @@ function bind() {
 async function boot() {
   bind();
   try {
-    const st = await api("/api/signup-status");
-    SIGNUP_OPEN = !!st.open;
-  } catch (_) {
-    /* 接口不可用就默认开着——真注册时后端还会再拦一道 */
-  }
-  renderAuthMode();
-  try {
     const data = await api("/api/me");
-    if (data.user) showApp(data.user);
-    else showLogin();
+    if (data.user) {
+      showApp(data.user);
+      return;
+    }
   } catch (_) {
-    showLogin();
+    /* 会话过期或接口不可用——都回登录页，别停在一片空白上 */
   }
+  goLogin();
 }
 
 boot();

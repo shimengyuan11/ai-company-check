@@ -316,3 +316,65 @@ ul#history { list-style: none; padding: 0; }
   font-size: var(--fs-2); cursor: pointer;
 }
 .history-item:hover { color: var(--primary); }
+
+/* ---------------- 独立登录页（/login） ----------------
+   左边是门面（深色，与工作台侧栏同一套色），右边是表单。
+   说清"给谁用、解决什么"——登录页是第一印象，不该只是一张白卡。 */
+.auth-shell { display: flex; min-height: 100vh; align-items: stretch; }
+
+.auth-side {
+  flex: 0 0 380px;
+  padding: var(--sp-6) var(--sp-5);
+  background: linear-gradient(160deg, var(--appbar-2), var(--appbar));
+  color: var(--appbar-ink);
+  display: flex; flex-direction: column; justify-content: space-between; gap: var(--sp-5);
+}
+.auth-side .brand { display: block; color: #fff; font-size: var(--fs-5); font-weight: 700; }
+.auth-tagline { margin: var(--sp-2) 0 0; color: var(--appbar-dim); font-size: var(--fs-3); }
+
+.auth-points {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-direction: column; gap: var(--sp-4);
+}
+.auth-points li {
+  display: flex; flex-direction: column; gap: 2px;
+  padding-left: var(--sp-3);
+  border-left: 2px solid rgba(255, 255, 255, .18);
+}
+.auth-points b { color: #fff; font-size: var(--fs-3); font-weight: 600; }
+.auth-points span { color: var(--appbar-dim); font-size: var(--fs-2); line-height: 1.55; }
+
+.auth-side-foot { margin: 0; }
+.auth-side-foot a { color: var(--appbar-dim); font-size: var(--fs-2); text-decoration: none; }
+.auth-side-foot a:hover { color: #fff; }
+
+.auth-main {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; align-items: center; justify-content: center;
+  padding: var(--sp-5);
+}
+.auth-card {
+  width: 100%; max-width: 360px; margin: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-3);
+  padding: var(--sp-5);
+  box-shadow: var(--sh-2);
+}
+.auth-card h1 { font-size: var(--fs-5); margin: 0 0 var(--sp-1); }
+.auth-card #authSub { margin-bottom: var(--sp-4); }
+
+.field { display: block; margin-bottom: var(--sp-3); }
+.field-label { display: block; margin-bottom: var(--sp-1); color: var(--text-2); font-size: var(--fs-2); }
+.field input { margin-bottom: 0; }
+
+.auth-card button[type="submit"] { width: 100%; margin-top: var(--sp-2); }
+.auth-switch { text-align: center; margin-top: var(--sp-4); }
+
+/* 窄屏：门面收成一条标题带，别让表单沉到屏幕外 */
+@media (max-width: 820px) {
+  .auth-shell { flex-direction: column; }
+  .auth-side { flex: 0 0 auto; padding: var(--sp-5) var(--sp-4); gap: var(--sp-2); }
+  .auth-points, .auth-side-foot { display: none; }
+  .auth-main { padding: var(--sp-4) var(--sp-4) var(--sp-6); align-items: flex-start; }
+}
