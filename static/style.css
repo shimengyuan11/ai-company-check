@@ -904,3 +904,9 @@ button:not(.ghost):not(.tag-chip):not(.nav-item):not(.cal-cell):active { transfo
   margin-top: var(--sp-2);
 }
 .stage-label { color: var(--primary); font-weight: 700; }
+
+/* 登录页：给地球留出右侧空间，别和登录卡在几何上重叠
+   （实测 1440 宽下重叠 13px、1280 下 49px——卡片 z-index 高看不出来，但窄屏会显脏） */
+@media (min-width: 1181px) {
+  .auth-main { padding-right: 360px; }
+}
