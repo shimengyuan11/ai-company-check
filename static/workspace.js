@@ -1729,8 +1729,44 @@ async function saveLimit(userId, value) {
 async function loadAiView() {
   $("aiAdminCard").hidden = !IS_ADMIN;
   $("limitCard").hidden = !IS_ADMIN;
+  $("demoCard").hidden = false; // 演示数据谁都能给自己造（只碰自己名下 + 「演示·」前缀）
   await loadProviders();
   if (IS_ADMIN) await loadLimits();
+}
+
+// 演示数据：造 / 清都只碰「演示·」前缀，真实数据不受影响
+async function seedDemo() {
+  const btn = $("seedDemo");
+  btn.disabled = true;
+  setText($("demoMsg"), "正在生成…");
+  try {
+    const d = await api("/api/demo/seed", { method: "POST" });
+    const c = d.created || {};
+    setText(
+      $("demoMsg"),
+      "已生成：客户 " + c.customers + " 条、跟进 " + c.followups + " 条、产品 " +
+        c.products + " 条、模板 " + c.templates + " 条、提醒 " + c.reminders +
+        " 条。去各栏目看看吧。"
+    );
+  } catch (err) {
+    setText($("demoMsg"), err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function clearDemo() {
+  if (!confirm("清空所有「演示·」前缀的数据？真实数据不受影响。")) return;
+  try {
+    const d = await api("/api/demo/clear", { method: "POST" });
+    const r = d.removed || {};
+    setText(
+      $("demoMsg"),
+      "已清空：客户 " + r.customers + " 条、产品 " + r.products + " 条、模板 " + r.templates + " 条。"
+    );
+  } catch (err) {
+    setText($("demoMsg"), err.message);
+  }
 }
 
 // ---------- 入口 ----------
@@ -1776,6 +1812,8 @@ function bind() {
   // 智能体
   $("saveProvider").addEventListener("click", saveProvider);
   $("cancelProvider").addEventListener("click", cancelProviderEdit);
+  $("seedDemo").addEventListener("click", seedDemo);
+  $("clearDemo").addEventListener("click", clearDemo);
 
   // 产品自定义属性
   $("addAttr").addEventListener("click", () => addAttrRow());

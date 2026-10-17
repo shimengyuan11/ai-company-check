@@ -1248,3 +1248,133 @@ def usage_by_user(since_iso):
             """,
             (since_iso,),
         ).fetchall()
+
+
+# ===================== 演示数据（管理员一键造 / 一键清） =====================
+# 目的：让管理员能在一个账号里看齐各栏目的「有数据状态」，验收完整流程。
+# 规矩：所有造出来的东西都带「演示·」前缀，清空只删带前缀的——绝不碰真实数据。
+
+DEMO_PREFIX = "演示·"
+
+
+def clear_demo_data():
+    """删掉所有「演示·」前缀的数据。客户带跟进/附件/提醒（外键级联）。"""
+    like = f"{DEMO_PREFIX}%"
+    with pool.connection() as conn:
+        customers = conn.execute(
+            "DELETE FROM customers WHERE contact_name LIKE %s", (like,)
+        ).rowcount
+        products = conn.execute("DELETE FROM products WHERE name LIKE %s", (like,)).rowcount
+        templates = conn.execute(
+            "DELETE FROM templates WHERE title LIKE %s", (like,)
+        ).rowcount
+    return {"customers": customers, "products": products, "templates": templates}
+
+
+def seed_demo_data(owner_id):
+    """造一套演示数据：客户 5 / 跟进若干 / 产品 5 / 模板 5 / 提醒 5。
+
+    客户归当前管理员，建档时间往前挪几天，好让「未联系天数」和筛选有东西可看。
+    """
+    clear_demo_data()
+    created = {"customers": 0, "followups": 0, "products": 0, "templates": 0, "reminders": 0}
+
+    # (姓名, 号码尾号, 国家, 公司, 来源, 备注, 阶段, 高意向, 几天前建档)
+    people = [
+        ("张伟", "0001", "美国", "Acme Trading", "FB", "问过 MOQ，报价已发", "已报价", True, 2),
+        ("李娜", "0002", "德国", "Nordwind GmbH", "邮件", "要 CE 认证文件", "跟进中", False, 6),
+        ("王强", "0003", "巴西", "Sul Importadora", "展会", "展会上聊过，等他预算", "新线索", False, 12),
+        ("陈静", "0004", "日本", "Maru Trading", "阿里国际站", "首单已成交，等复购", "成交", True, 20),
+        ("刘洋", "0005", "阿联酋", "Gulf Metals", "FB", "价格谈不拢，暂时搁置", "流失", False, 35),
+    ]
+    followups = {
+        0: ["发了报价单 DN50 PN16，等他确认", "他说在和另一家比价"],
+        1: ["要了 CE 认证和材质证明", "已把证书发过去，等回复"],
+        2: ["第一次通话，问了年采购量", "他说下季度才有预算"],
+        3: ["首单 500 件已收款", "问了他复购周期，说 3 个月"],
+    }
+
+    today = datetime.now(timezone.utc).date()
+    with pool.connection() as conn:
+        for idx, (name, tail, country, company, source, note, stage, hot, days_ago) in enumerate(people):
+            stamp = (
+                datetime.now(timezone.utc) - timedelta(days=days_ago)
+            ).isoformat(timespec="seconds")
+            phone = f"1390000{tail}"
+            row = conn.execute(
+                "INSERT INTO customers"
+                " (owner_id, contact_name, phone, phone_norm, country, company, source, note,"
+                "  stage, high_intent, created_at, updated_at)"
+                " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                (
+                    owner_id, DEMO_PREFIX + name, phone, norm_phone(phone), country,
+                    company, source, note, stage, hot, stamp, stamp,
+                ),
+            ).fetchone()
+            cid = row["id"]
+            created["customers"] += 1
+
+            for i, content in enumerate(followups.get(idx, [])):
+                fstamp = (
+                    datetime.now(timezone.utc) - timedelta(days=max(days_ago - 1 - i, 0))
+                ).isoformat(timespec="seconds")
+                conn.execute(
+                    "INSERT INTO followups (customer_id, user_id, content, kind, created_at)"
+                    " VALUES (%s, %s, %s, %s, %s)",
+                    (cid, owner_id, content, "跟进", fstamp),
+                )
+                created["followups"] += 1
+
+            # 每个客户都排一条提醒（未来 0~4 天），红点和日历就有东西
+            due = today + timedelta(days=idx % 5)
+            conn.execute(
+                "INSERT INTO reminders (customer_id, user_id, due_date, note, done, created_at)"
+                " VALUES (%s, %s, %s, %s, FALSE, %s)",
+                (cid, owner_id, due, f"演示提醒：跟进 {DEMO_PREFIX}{name}", _now()),
+            )
+            created["reminders"] += 1
+
+        # 产品 5 条，带自定义属性
+        products = [
+            ("演示·不锈钢法兰", "DN50 PN16", "12.5 USD", {"材质": "304 不锈钢", "MOQ": "500 件", "交期": "25 天"}),
+            ("演示·橡胶垫片", "DN50", "0.8 USD", {"材质": "NBR", "MOQ": "5000 件"}),
+            ("演示·球阀", "DN25 PN40", "8.2 USD", {"材质": "黄铜", "交期": "30 天"}),
+            ("演示·弯头", "DN80", "3.4 USD", {"材质": "碳钢", "标准": "ASME B16.9"}),
+            ("演示·螺栓组件", "M16×80", "0.35 USD", {"材质": "8.8 级", "包装": "纸箱"}),
+        ]
+        for name, spec, price, attrs in products:
+            conn.execute(
+                "INSERT INTO products (name, spec, price, note, attrs, created_at)"
+                " VALUES (%s, %s, %s, %s, %s, %s)",
+                (name, spec, price, "", json.dumps(attrs, ensure_ascii=False), _now()),
+            )
+            created["products"] += 1
+
+        # 话术模板 5 条（标题都带前缀）
+        templates = [
+            ("演示·首次触达（FB 个人买家）", "您好 {客户名}，我们是 {产品} 的生产厂家，看到您在找这类产品，想问下目标市场和数量。", ["FB", "个人买家", "首次触达"]),
+            ("演示·已读不回激活", "{客户名} 您好，上周给您的报价还在有效期，需要我把规格书再发一份吗？", ["邮件", "已读不回激活"]),
+            ("演示·嫌贵应对", "理解您对价格的顾虑。我们用的是 304 材质，可以按您的量做阶梯价，方便说下预计年采购量吗？", ["嫌贵", "代理商"]),
+            ("演示·逼单", "{客户名}，这批货排产需要 25 天，本月定下来能赶上下个船期。要不要先把 PI 出了？", ["逼单"]),
+            ("演示·老客户复购", "上次那批用得还顺利吗？按您说的 3 个月周期，现在该备下一批了。", ["老客户复购", "终端客户"]),
+        ]
+        for title, body, tag_names in templates:
+            row = conn.execute(
+                "INSERT INTO templates (owner_id, title, body, use_count, created_at, updated_at)"
+                " VALUES (%s, %s, %s, 0, %s, %s) RETURNING id",
+                (owner_id, title, body, _now(), _now()),
+            ).fetchone()
+            tid = row["id"]
+            created["templates"] += 1
+            for tag_name in tag_names:
+                tag = conn.execute(
+                    "SELECT id FROM tags WHERE name = %s LIMIT 1", (tag_name,)
+                ).fetchone()
+                if tag:
+                    conn.execute(
+                        "INSERT INTO template_tags (template_id, tag_id) VALUES (%s, %s)"
+                        " ON CONFLICT DO NOTHING",
+                        (tid, tag["id"]),
+                    )
+
+    return created

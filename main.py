@@ -917,6 +917,24 @@ def api_set_limit(user_id: int, req: LimitRequest, request: Request):
     return {"ok": True}
 
 
+# ---- 演示数据：一键造 / 一键清（只有管理员能用） ----
+# 所有数据带「演示·」前缀，清空只删带前缀的，真实数据一条不碰。
+
+
+@app.post("/api/demo/seed")
+def api_seed_demo(request: Request):
+    """给自己造一套演示数据。客户/提醒归自己，产品/模板是团队共享的（都带「演示·」前缀）。"""
+    user = auth.require_user(request)
+    return {"ok": True, "created": db.seed_demo_data(user["id"])}
+
+
+@app.post("/api/demo/clear")
+def api_clear_demo(request: Request):
+    """清掉所有「演示·」前缀的数据。真实数据一条不碰。"""
+    auth.require_user(request)
+    return {"ok": True, "removed": db.clear_demo_data()}
+
+
 # ==================================================================
 # 页面
 # ==================================================================
