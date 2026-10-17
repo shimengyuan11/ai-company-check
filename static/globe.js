@@ -41,10 +41,10 @@ function start(host) {
   host.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  /* fov 30 + 距离 38：球（直径 20）占画布约 92% —— 一打开就是主视觉。
-     轨道环贴着球缘走，超出画幅的那一点点被裁掉是正常的，球体本身完整。 */
+  /* fov 30 + 距离 48：球（直径 20）占画布约 73%，加上大气辉光视觉约 80%，
+     比第一版（相机 52）只大 7% 左右，四周始终留白。 */
   const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 400);
-  camera.position.set(0, 4.5, 38);
+  camera.position.set(0, 5, 48);
 
   /* ---- 灯光：主光偏左上，让右侧自然进入夜面，城市灯才亮得出来 ------- */
   const keyLight = new THREE.DirectionalLight(0xffffff, 2.7);
@@ -122,7 +122,7 @@ function start(host) {
 
   /* 外围更淡的一层，营造"大气厚度" */
   const halo = new THREE.Mesh(
-    new THREE.SphereGeometry(R * 1.14, 64, 64),
+    new THREE.SphereGeometry(R * 1.08, 64, 64),
     new THREE.ShaderMaterial({
       uniforms: { uColor: { value: new THREE.Color(0x2f6fd0) } },
       vertexShader: /* glsl */`
@@ -185,7 +185,7 @@ function start(host) {
   });
 
   const orbitA = new THREE.Group();
-  const RING_A = R * 1.06;
+  const RING_A = R * 1.20;
   const ring1 = new THREE.Mesh(new THREE.TorusGeometry(RING_A, 0.014, 8, 240), ringMatA);
   ring1.rotation.x = Math.PI / 2;
   orbitA.add(ring1);
@@ -193,7 +193,7 @@ function start(host) {
   earthGroup.add(orbitA);
 
   const orbitB = new THREE.Group();
-  const ring2 = new THREE.Mesh(new THREE.TorusGeometry(R * 1.14, 0.010, 8, 240), ringMatB);
+  const ring2 = new THREE.Mesh(new THREE.TorusGeometry(R * 1.10, 0.010, 8, 240), ringMatB);
   ring2.rotation.x = Math.PI / 2;
   orbitB.add(ring2);
   orbitB.rotation.set(-0.55, 0, 0.85);
@@ -228,7 +228,9 @@ function start(host) {
     const a = latLon(la1, lo1, R);
     const b = latLon(la2, lo2, R);
     const mid = a.clone().add(b).multiplyScalar(0.5);
-    const lift = R + a.distanceTo(b) * 0.55;
+    /* 弧顶压得很低并封顶：超过 1.1 就会顶出画布边缘，
+       看起来像「地球被框裁掉了」——这正是上一版观感变差的原因 */
+    const lift = R + Math.min(a.distanceTo(b) * 0.12, 1.1);
     if (mid.lengthSq() < 1e-6) mid.copy(a);
     mid.normalize().multiplyScalar(lift);
 
@@ -254,9 +256,9 @@ function start(host) {
   controls.enablePan = false;
   controls.rotateSpeed = 0.55;
   controls.zoomSpeed = 0.6;
-  /* 缩放范围：能凑近看大陆细节，也能拉远看成一颗小地球 */
-  controls.minDistance = 20;
-  controls.maxDistance = 120;
+  /* 缩放范围：能凑近看大陆细节，也能拉远看整体，但两端都留了余量 */
+  controls.minDistance = 22;
+  controls.maxDistance = 80;
   controls.minPolarAngle = 0.35;
   controls.maxPolarAngle = Math.PI - 0.35;
   controls.autoRotate = true;

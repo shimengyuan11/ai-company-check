@@ -1005,11 +1005,11 @@ button:not(.ghost):not(.tag-chip):not(.nav-item):not(.cal-cell):active { transfo
    30vw 保证在 1440 / 1280 两档都不会压到中间的登录卡。
    ============================================================ */
 #globe {
-  position: absolute; right: 1vw; top: 50%; transform: translateY(-50%);
-  /* 尺寸反推迟来：球在画布内占 ~92%，所以容器 ≈ 球直径 / 0.92。
-     球直径取 min(61vh, 30vw) —— 1568×657 的窗口下约 434px，
-     正是「一打开就是这个大小」的那张图；宽屏靠 30vw 兜住，不会压到登录卡。 */
-  width: min(66vh, 33vw); aspect-ratio: 1 / 1;
+  position: absolute; right: 2vw; top: 50%; transform: translateY(-50%);
+  /* 尺寸回到第一版那套刻度（clamp 300/30vw/460），不跟视口高度挂钩——
+     挂 vh 会在高窗口里把球顶到画面边缘去。球在画布内占 ~76%，
+     所以视觉直径约是画布的 0.76，比第一版只大一成左右。 */
+  width: clamp(300px, 30vw, 460px); aspect-ratio: 1 / 1;
   z-index: 0; opacity: 0;
   transition: opacity 1.1s cubic-bezier(.22,.61,.36,1);
   touch-action: none;
