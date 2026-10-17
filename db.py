@@ -14,6 +14,7 @@
    好处：想「忘了加权限」都很难，因为这里根本没有一个「不带 viewer 的取客户函数」。
 """
 import atexit
+import json
 import os
 from datetime import datetime, timezone
 
@@ -156,6 +157,8 @@ def init_db():
         )
 
         # 产品目录：也是**团队共享**的（公司卖的是同一批产品）。
+        # attrs 是「自定义属性」：材质 / MOQ / 交期 这类每个产品不一样的字段，
+        # 存 JSON 文本，前端按键值对渲染。固定列永远追不上业务的口头描述。
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS products (
@@ -164,9 +167,31 @@ def init_db():
                 spec       TEXT,
                 price      TEXT,
                 note       TEXT,
+                attrs      TEXT,
                 created_at TEXT
             )
             """
+        )
+
+        # 提醒（日历看板）：给某个客户定一个「该联系」的日子。
+        # **个人日程**——查询按 user_id 过滤，同事看不到你的安排。
+        # 客户删了，提醒跟着走（ON DELETE CASCADE）。
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS reminders (
+                id          SERIAL PRIMARY KEY,
+                customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+                user_id     INTEGER NOT NULL REFERENCES users(id),
+                due_date    DATE NOT NULL,
+                note        TEXT,
+                done        BOOLEAN NOT NULL DEFAULT FALSE,
+                created_at  TEXT
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders(due_date)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_reminders_customer ON reminders(customer_id)"
         )
 
         # —— 第 3 期：话术库 ——
@@ -254,6 +279,9 @@ def init_db():
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_customers_phone_norm ON customers(phone_norm)"
         )
+
+        # —— 老库升级：产品自定义属性（材质 / MOQ / 交期…），存 JSON 文本 ——
+        conn.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS attrs TEXT")
 
         # —— 预置默认标签（幂等：靠 UNIQUE(grp, name) 兜住，重复启动不会重复插）——
         for grp, names in DEFAULT_TAGS.items():
@@ -615,25 +643,135 @@ def delete_attachment(att_id, customer_id):
 # ===================== V2：产品目录（团队共享） =====================
 
 
-def create_product(name, spec="", price="", note=""):
+def _attrs_dict(raw):
+    """库里存的是 JSON 文本；读坏了的当空 dict，别让一条脏数据把整页打挂。"""
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _attrs_text(attrs):
+    return json.dumps(attrs or {}, ensure_ascii=False)
+
+
+def _product_row(row):
+    """产品行 → 给前端的 dict（attrs 从 JSON 文本还原成对象）。"""
+    if row is None:
+        return None
+    out = dict(row)
+    out["attrs"] = _attrs_dict(row.get("attrs"))
+    return out
+
+
+def create_product(name, spec="", price="", note="", attrs=None):
     with pool.connection() as conn:
         row = conn.execute(
-            "INSERT INTO products (name, spec, price, note, created_at)"
-            " VALUES (%s, %s, %s, %s, %s) RETURNING id",
-            (name, spec, price, note, _now()),
+            "INSERT INTO products (name, spec, price, note, attrs, created_at)"
+            " VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+            (name, spec, price, note, _attrs_text(attrs), _now()),
         ).fetchone()
     return row["id"]
 
 
+def update_product(product_id, **fields):
+    """改产品。attrs 传进来就整体替换（前端每次提交完整的一组键值对）。"""
+    sets, values = [], []
+    for key in ("name", "spec", "price", "note"):
+        if key in fields:
+            sets.append(f"{key} = %s")
+            values.append(fields[key])
+    if "attrs" in fields:
+        sets.append("attrs = %s")
+        values.append(_attrs_text(fields["attrs"]))
+    if not sets:
+        return get_product(product_id)
+    values.append(product_id)
+    with pool.connection() as conn:
+        row = conn.execute(
+            f"UPDATE products SET {', '.join(sets)} WHERE id = %s RETURNING *", values
+        ).fetchone()
+    return _product_row(row)
+
+
+def get_product(product_id):
+    with pool.connection() as conn:
+        row = conn.execute("SELECT * FROM products WHERE id = %s", (product_id,)).fetchone()
+    return _product_row(row)
+
+
 def list_products():
     with pool.connection() as conn:
-        return conn.execute("SELECT * FROM products ORDER BY id DESC").fetchall()
+        rows = conn.execute("SELECT * FROM products ORDER BY id DESC").fetchall()
+    return [_product_row(r) for r in rows]
 
 
 def delete_product(product_id):
     with pool.connection() as conn:
         cur = conn.execute("DELETE FROM products WHERE id = %s", (product_id,))
         return cur.rowcount > 0
+
+
+# ===================== 提醒（日历看板，个人日程） =====================
+
+
+def create_reminder(customer_id, user_id, due_date, note=""):
+    with pool.connection() as conn:
+        row = conn.execute(
+            "INSERT INTO reminders (customer_id, user_id, due_date, note, done, created_at)"
+            " VALUES (%s, %s, %s, %s, FALSE, %s) RETURNING id",
+            (customer_id, user_id, due_date, note, _now()),
+        ).fetchone()
+    return row["id"]
+
+
+def list_reminders(user_id, date_from, date_to):
+    """某个日期区间里「我的」提醒（连带客户名，日历上直接能看出是谁）。"""
+    with pool.connection() as conn:
+        return conn.execute(
+            """
+            SELECT r.id, r.customer_id, r.due_date, r.note, r.done, r.created_at,
+                   c.contact_name, c.company, c.country, c.stage
+            FROM reminders r JOIN customers c ON c.id = r.customer_id
+            WHERE r.user_id = %s AND r.due_date BETWEEN %s AND %s
+            ORDER BY r.due_date, r.id
+            """,
+            (user_id, date_from, date_to),
+        ).fetchall()
+
+
+def set_reminder_done(reminder_id, user_id, done):
+    with pool.connection() as conn:
+        cur = conn.execute(
+            "UPDATE reminders SET done = %s WHERE id = %s AND user_id = %s",
+            (bool(done), reminder_id, user_id),
+        )
+        return cur.rowcount > 0
+
+
+def delete_reminder(reminder_id, user_id):
+    with pool.connection() as conn:
+        cur = conn.execute(
+            "DELETE FROM reminders WHERE id = %s AND user_id = %s", (reminder_id, user_id)
+        )
+        return cur.rowcount > 0
+
+
+def count_pending_reminders(user_id, today):
+    """红点数字：今天及以前、还没做完的条数。
+
+    为什么要带「以前」：昨天该联系却忘了，今天更该提醒——漏掉比迟到更糟。
+    """
+    with pool.connection() as conn:
+        row = conn.execute(
+            "SELECT count(*) AS n FROM reminders"
+            " WHERE user_id = %s AND done = FALSE AND due_date <= %s",
+            (user_id, today),
+        ).fetchone()
+    return row["n"]
 
 
 # ===================== 第 3 期：话术库（团队共享） =====================
@@ -643,11 +781,18 @@ def delete_product(product_id):
 
 
 def list_tags(include_inactive=False):
-    """标签清单，按组给前端分组用。默认只给在用的（停用的从下拉里消失）。"""
-    sql = "SELECT * FROM tags"
+    """标签清单，按组给前端分组用。默认只给在用的（停用的从下拉里消失）。
+
+    每条带上 use_count（有几个模板挂着它）——删/合并之前得让人知道影响面。
+    """
+    sql = """
+        SELECT t.*,
+               (SELECT count(*) FROM template_tags tt WHERE tt.tag_id = t.id) AS use_count
+        FROM tags t
+    """
     if not include_inactive:
-        sql += " WHERE is_active = TRUE"
-    sql += " ORDER BY grp, name"
+        sql += " WHERE t.is_active = TRUE"
+    sql += " ORDER BY t.grp, t.name"
     with pool.connection() as conn:
         return conn.execute(sql).fetchall()
 
@@ -675,6 +820,43 @@ def set_tag_active(tag_id, active):
     """停用 / 重新启用。不物理删——删了会把老模板上的标签一起抽走。"""
     with pool.connection() as conn:
         cur = conn.execute("UPDATE tags SET is_active = %s WHERE id = %s", (bool(active), tag_id))
+        return cur.rowcount > 0
+
+
+def get_tag(tag_id):
+    with pool.connection() as conn:
+        return conn.execute("SELECT * FROM tags WHERE id = %s", (tag_id,)).fetchone()
+
+
+def delete_tag(tag_id):
+    """真删一个标签（模板上的关联由外键 CASCADE 一起清掉）。
+
+    什么时候该用它、什么时候该停用：**删是「这条标签本身就是错的 / 重复的」**（比如多打了一个），
+    停用是「暂时不想看到但仍要留着历史」。合并则是重复标签的正解。
+    """
+    with pool.connection() as conn:
+        cur = conn.execute("DELETE FROM tags WHERE id = %s", (tag_id,))
+        return cur.rowcount > 0
+
+
+def merge_tag(src_id, dst_id):
+    """把 src 的模板关联整体迁到 dst，再把 src 删掉。
+
+    解决的是「FB」和「facebook」并存这种乱：迁完旧标签消失，模板上的标记变成新的那个。
+    已存在的关联靠 ON CONFLICT DO NOTHING 跳过，不会撞主键。
+    """
+    if src_id == dst_id:
+        return False
+    with pool.connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO template_tags (template_id, tag_id)
+            SELECT template_id, %s FROM template_tags WHERE tag_id = %s
+            ON CONFLICT DO NOTHING
+            """,
+            (dst_id, src_id),
+        )
+        cur = conn.execute("DELETE FROM tags WHERE id = %s", (src_id,))
         return cur.rowcount > 0
 
 

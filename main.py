@@ -1,3 +1,4 @@
+import datetime as dt
 import os
 import re
 from pathlib import Path
@@ -388,6 +389,16 @@ class ProductRequest(BaseModel):
     spec: str = ""
     price: str = ""
     note: str = ""
+    # 自定义属性：材质 / MOQ / 交期… 固定列追不上业务的口头描述，所以留一个键值袋
+    attrs: dict[str, str] = Field(default_factory=dict)
+
+
+class ProductPatch(BaseModel):
+    name: str | None = None
+    spec: str | None = None
+    price: str | None = None
+    note: str | None = None
+    attrs: dict[str, str] | None = None
 
 
 @app.get("/api/products")
@@ -402,7 +413,22 @@ def api_create_product(req: ProductRequest, request: Request):
     name = req.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="产品名不能为空")
-    return {"id": db.create_product(name, req.spec.strip(), req.price.strip(), req.note.strip())}
+    pid = db.create_product(
+        name, req.spec.strip(), req.price.strip(), req.note.strip(), req.attrs
+    )
+    return db.get_product(pid)
+
+
+@app.patch("/api/products/{product_id}")
+def api_patch_product(product_id: int, req: ProductPatch, request: Request):
+    auth.require_user(request)
+    fields = {k: v for k, v in req.model_dump().items() if v is not None}
+    if "name" in fields and not fields["name"].strip():
+        raise HTTPException(status_code=400, detail="产品名不能为空")
+    row = db.update_product(product_id, **fields)
+    if row is None:
+        raise HTTPException(status_code=404, detail="产品不存在")
+    return row
 
 
 @app.delete("/api/products/{product_id}")
@@ -467,6 +493,35 @@ def api_set_tag_active(tag_id: int, req: TagPatch, request: Request):
     """停用 / 重新启用标签。停用后它从下拉里消失，但老模板上仍然看得到。"""
     auth.require_user(request)
     if not db.set_tag_active(tag_id, req.is_active):
+        raise HTTPException(status_code=404, detail="标签不存在")
+    return {"ok": True}
+
+
+class TagMerge(BaseModel):
+    into_id: int
+
+
+@app.delete("/api/tags/{tag_id}")
+def api_delete_tag(tag_id: int, request: Request):
+    """真删标签。挂在模板上的关联会一起清掉——前端删之前要拿 use_count 提醒用户。"""
+    auth.require_user(request)
+    if not db.delete_tag(tag_id):
+        raise HTTPException(status_code=404, detail="标签不存在")
+    return {"ok": True}
+
+
+@app.post("/api/tags/{tag_id}/merge")
+def api_merge_tag(tag_id: int, req: TagMerge, request: Request):
+    """把「这条」合并进「那条」：模板上的旧标签换成新的，旧标签消失。
+
+    这是治「FB 和 facebook 并存」的正解——比手工删再逐个补标签省事且不漏。
+    """
+    auth.require_user(request)
+    if tag_id == req.into_id:
+        raise HTTPException(status_code=400, detail="不能合并到自己")
+    if db.get_tag(req.into_id) is None:
+        raise HTTPException(status_code=404, detail="要合并到的标签不存在")
+    if not db.merge_tag(tag_id, req.into_id):
         raise HTTPException(status_code=404, detail="标签不存在")
     return {"ok": True}
 
@@ -540,8 +595,13 @@ def api_generate(customer_id: int, req: GenerateRequest, request: Request):
         template = db.get_template(req.template_id)
         if template is None:
             raise HTTPException(status_code=404, detail="模板不存在")
+    # 最近的跟进记录也喂进去——「聊到哪一步了」是写话术最关键的信息，
+    # 只给客户资料的话，生成出来的东西跟谁都能套，业务还得自己改一遍。
+    recent = db.list_followups(customer_id)[:3]
     try:
-        text = generate_pitch(customer, template["body"] if template else "", req.request)
+        text = generate_pitch(
+            customer, template["body"] if template else "", req.request, recent
+        )
     except httpx.HTTPStatusError as e:
         raise HTTPException(
             status_code=502,
@@ -562,6 +622,12 @@ def api_generate(customer_id: int, req: GenerateRequest, request: Request):
         "output": text,
         "model": MODEL,
         "template_title": template["title"] if template else None,
+        # 把「依据什么生成的」回给前端——业务能核对，AI 也就不再是黑箱
+        "basis": {
+            "customer": customer.get("contact_name") or "",
+            "followups": len(recent),
+            "template": template["title"] if template else None,
+        },
     }
 
 
@@ -571,6 +637,73 @@ def api_list_generations(customer_id: int, request: Request):
     user = auth.require_user(request)
     _visible_customer(customer_id, user)
     return {"items": db.list_generations(customer_id)}
+
+
+# ==================================================================
+# 提醒（日历看板，个人日程）
+# ==================================================================
+
+
+class ReminderRequest(BaseModel):
+    customer_id: int
+    due_date: str  # YYYY-MM-DD
+    note: str = ""
+
+
+class ReminderPatch(BaseModel):
+    done: bool
+
+
+def _parse_date(text: str) -> dt.date:
+    try:
+        return dt.date.fromisoformat((text or "").strip())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="日期格式要 YYYY-MM-DD")
+
+
+@app.get("/api/reminders/pending-count")
+def api_pending_reminders(request: Request):
+    """左导航红点上的数字：今天及以前、还没做完的提醒条数。"""
+    user = auth.require_user(request)
+    return {"count": db.count_pending_reminders(user["id"], dt.date.today())}
+
+
+@app.get("/api/reminders")
+def api_list_reminders(request: Request, date_from: str = "", date_to: str = ""):
+    """我的提醒（同事的安排看不到）。不传区间就默认给 date_from 所在的整月。"""
+    user = auth.require_user(request)
+    start = _parse_date(date_from) if date_from else dt.date.today().replace(day=1)
+    if date_to:
+        end = _parse_date(date_to)
+    else:
+        next_month = (start.replace(day=28) + dt.timedelta(days=4)).replace(day=1)
+        end = next_month - dt.timedelta(days=1)
+    return {"items": db.list_reminders(user["id"], start, end)}
+
+
+@app.post("/api/reminders")
+def api_create_reminder(req: ReminderRequest, request: Request):
+    user = auth.require_user(request)
+    _visible_customer(req.customer_id, user)  # 别人的客户，连提醒都不该建得下来
+    due = _parse_date(req.due_date)
+    return {"id": db.create_reminder(req.customer_id, user["id"], due, req.note.strip())}
+
+
+@app.patch("/api/reminders/{reminder_id}")
+def api_patch_reminder(reminder_id: int, req: ReminderPatch, request: Request):
+    """标记做完 / 取消做完。做完就从红点里消失，记录还留着。"""
+    user = auth.require_user(request)
+    if not db.set_reminder_done(reminder_id, user["id"], req.done):
+        raise HTTPException(status_code=404, detail="提醒不存在")
+    return {"ok": True}
+
+
+@app.delete("/api/reminders/{reminder_id}")
+def api_delete_reminder(reminder_id: int, request: Request):
+    user = auth.require_user(request)
+    if not db.delete_reminder(reminder_id, user["id"]):
+        raise HTTPException(status_code=404, detail="提醒不存在")
+    return {"ok": True}
 
 
 # ==================================================================

@@ -475,3 +475,63 @@ textarea::placeholder { color: var(--text-3); }
 
 /* 侧栏底部的构建版本号（用来判断「你跑的是哪一版」） */
 .build-tag { font-size: 11px; color: rgba(255, 255, 255, .32); letter-spacing: .02em; }
+
+/* ---------------- 未联系天数（列表与详情共用一句话） ---------------- */
+.contact-line { margin: var(--sp-2) 0 0; font-size: var(--fs-2); color: var(--text-2); }
+.cust-meta .contact { color: var(--text-3); }
+.cust-meta .contact.warn { color: var(--warn); font-weight: 600; }
+
+/* ---------------- 左导航红点 ---------------- */
+.nav-item .badge {
+  display: inline-block; margin-left: 6px; min-width: 18px; padding: 0 5px;
+  border-radius: 999px; background: var(--danger); color: #fff;
+  font-size: 11px; line-height: 18px; text-align: center; vertical-align: middle;
+  font-weight: 600;
+}
+
+/* ---------------- 日历看板 ---------------- */
+.cal-head { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-3); }
+.cal-head h2 { margin: 0; flex: 1 1 auto; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.cal-cell {
+  position: relative; min-height: 62px; padding: 6px;
+  border: 1px solid var(--border); border-radius: var(--r-2);
+  background: var(--surface); color: var(--text);
+  font-family: inherit; font-size: var(--fs-3); text-align: left; cursor: pointer;
+  transition: border-color .12s, background .12s;
+}
+.cal-cell:hover { border-color: var(--border-strong); background: var(--surface-2); filter: none; }
+.cal-cell.empty { border: 0; background: transparent; cursor: default; pointer-events: none; }
+.cal-cell.today { border-color: var(--primary); }
+.cal-cell.selected { background: var(--primary-soft); border-color: var(--primary); }
+.cal-num { font-size: var(--fs-2); color: var(--text-2); }
+.cal-dot {
+  position: absolute; right: 6px; bottom: 6px;
+  min-width: 18px; padding: 0 5px; border-radius: 999px;
+  background: var(--danger); color: #fff; font-size: 11px; line-height: 18px;
+  text-align: center; font-weight: 600;
+}
+.rem-item.done { opacity: .6; }
+.rem-item.done .cust-name { text-decoration: line-through; }
+
+/* ---------------- 标签管理（删 / 合并） ---------------- */
+.tag-admin { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-2); }
+.tag-admin-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.tag-admin-item {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px; border: 1px solid var(--border); border-radius: var(--r-1);
+  background: var(--surface-2); font-size: var(--fs-2);
+}
+.tag-admin-item.off { opacity: .5; text-decoration: line-through; }
+.tag-admin-item b { color: var(--text-3); font-weight: 500; font-size: var(--fs-1); }
+.tag-merge-select {
+  width: auto; min-width: 74px; margin: 0; padding: 2px 4px;
+  font-size: var(--fs-1); border-radius: var(--r-1);
+}
+.tag-del { min-height: 24px; padding: 2px 6px; font-size: var(--fs-1); }
+
+/* ---------------- 产品自定义属性（键值对行） ---------------- */
+.attr-rows { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-2); }
+.attr-row input { flex: 1 1 120px; margin-bottom: 0; }
+.attr-del { min-height: 34px; padding: 4px 10px; }
+#addAttr { margin-top: var(--sp-2); min-height: 32px; font-size: var(--fs-2); }

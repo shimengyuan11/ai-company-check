@@ -75,10 +75,14 @@ PITCH_PROMPT = """你是外贸业务的写作助手。用户会给你一段客�
 这是「AI 出草稿、人负责」的环节：起草要克制，宁可少说，也不要编。"""
 
 
-def generate_pitch(customer: dict, template_body: str = "", request: str = "") -> str:
-    """按客户 + 模板 + 要求生成一条话术。返回正文。
+def generate_pitch(
+    customer: dict, template_body: str = "", request: str = "", followups=None
+) -> str:
+    """按客户 + 模板 + 要求 + 最近的跟进记录生成一条话术。返回正文。
 
     customer 传 db.get_customer 那一行即可（姓名 / 公司 / 国家 / 阶段 / 备注 / 来源）。
+    followups 传最近的几条跟进（每条至少含 content / created_at）——「聊到哪了」
+    才是写话术最要紧的上下文，缺了它生成的东西只能套模板。
     """
     bits = []
     for label, key in [
@@ -93,6 +97,16 @@ def generate_pitch(customer: dict, template_body: str = "", request: str = "") -
         if value:
             bits.append(f"{label}：{value}")
     user_content = "客户信息：\n" + ("\n".join(bits) if bits else "（只有姓名，其余没填）")
+
+    if followups:
+        lines = []
+        for f in list(followups)[:5]:
+            when = (f.get("created_at") or "")[:10]
+            content = (f.get("content") or "").strip().replace("\n", " ")
+            if content:
+                lines.append(f"- {when}：{content}")
+        if lines:
+            user_content += "\n\n最近的跟进记录（从新到旧，写话术要接得上这些）：\n" + "\n".join(lines)
 
     if template_body.strip():
         user_content += "\n\n参考话术模板（可以改写，但保持意图）：\n" + template_body.strip()

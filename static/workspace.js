@@ -47,6 +47,41 @@ function formatTime(iso) {
   return d ? d.toLocaleString("zh-CN", { hour12: false }) : iso || "";
 }
 
+// 两个日期差几天（按日历天算，不受具体时刻影响）——「未联系天数」的算法底座
+function daysBetween(iso) {
+  const d = toDate(iso);
+  if (!d) return null;
+  const a = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const now = new Date();
+  const b = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  return Math.round((b - a) / 86400000);
+}
+
+// 只显示月-日，列表里省地方
+function shortDate(iso) {
+  const d = toDate(iso);
+  return d ? d.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" }) : "";
+}
+
+// 联系状态：跟进过的看「最后跟进到今」，没跟进过的看「建档到今」。
+// 两个时间概念分开说清楚——建档是建档，联系是联系，别混成一个。
+function contactStatus(c) {
+  const lastDays = daysBetween(c.last_followup_at);
+  const createdDays = daysBetween(c.created_at);
+  if (lastDays !== null) {
+    return {
+      text: lastDays === 0 ? "今天已跟进" : lastDays + " 天未联系",
+      sub: "上次跟进 " + shortDate(c.last_followup_at) + "（" + (lastDays === 0 ? "今天" : lastDays + " 天前") + "）",
+      days: lastDays,
+    };
+  }
+  return {
+    text: createdDays === 0 ? "今天建档" : createdDays + " 天未联系",
+    sub: "建档 " + shortDate(c.created_at) + "（还没写过跟进）",
+    days: createdDays,
+  };
+}
+
 // 所有请求都走这里：出错时把后端给的 detail 原样抛出来，别自己编提示
 async function api(path, options = {}) {
   const res = await fetch(path, {
@@ -84,6 +119,7 @@ function showApp(user) {
   switchView("customers");
   loadOptions();
   loadCustomers();
+  loadPendingCount(); // 左导航「日历」旁的红点
 }
 
 async function logout() {
@@ -194,10 +230,13 @@ async function loadCustomers() {
       if (c.source) tags.push('<span class="tag src">' + escapeHtml(c.source) + "</span>");
       if (c.high_intent) tags.push('<span class="tag hot">高意向</span>');
       const sub = [c.company, c.country].filter(Boolean).join(" · ");
+      const st = contactStatus(c);
+      const stCls = st.days !== null && st.days >= 7 ? "contact warn" : "contact";
       li.innerHTML =
         '<div class="cust-name">' + escapeHtml(titleOf(c)) + "</div>" +
         '<div class="cust-meta">' + tags.join("") +
         (sub ? "<span>" + escapeHtml(sub) + "</span>" : "") +
+        '<span class="' + stCls + '">' + escapeHtml(st.text) + "</span>" +
         "<span>跟进 " + c.followup_count + " 条</span></div>";
       li.addEventListener("click", () => openCustomer(c.id));
       list.appendChild(li);
@@ -251,6 +290,8 @@ async function openCustomer(id) {
     if (c.note) bits.push(c.note);
     bits.push("建档于 " + formatTime(c.created_at));
     setText($("dMeta"), bits.join(" ｜ "));
+    const st = contactStatus(c);
+    $("dContact").textContent = st.text + " · " + st.sub;
     setText($("toggleHot"), c.high_intent ? "取消高意向" : "标记高意向");
     $("dStage").value = c.stage || "";
     // 生成区：模板下拉 + 这个客户生成过的记录
@@ -423,6 +464,7 @@ async function loadOptions() {
 
 function switchView(name) {
   $("viewCustomers").hidden = name !== "customers";
+  $("viewCalendar").hidden = name !== "calendar";
   $("viewTemplates").hidden = name !== "templates";
   $("viewProducts").hidden = name !== "products";
   document.querySelectorAll(".nav-item[data-view]").forEach((el) => {
@@ -432,6 +474,10 @@ function switchView(name) {
   if (name === "templates") {
     loadTags();
     loadTemplates();
+  }
+  if (name === "calendar") {
+    loadReminderCustomers();
+    loadReminders();
   }
 }
 
@@ -511,6 +557,47 @@ async function deleteAttachment(attId, name) {
 
 // ---------- 产品目录（团队共享） ----------
 
+// 自定义属性：材质 / MOQ / 交期…… 固定列追不上业务的描述，所以让用户自己加键值对
+function attrRow(key = "", value = "") {
+  const row = document.createElement("div");
+  row.className = "newrow attr-row";
+  const k = document.createElement("input");
+  k.className = "attr-key";
+  k.placeholder = "属性名（材质 / MOQ / 交期）";
+  k.value = key;
+  const v = document.createElement("input");
+  v.className = "attr-val";
+  v.placeholder = "值";
+  v.value = value;
+  const del = document.createElement("button");
+  del.type = "button";
+  del.className = "ghost danger attr-del";
+  del.textContent = "×";
+  del.addEventListener("click", () => row.remove());
+  row.append(k, v, del);
+  return row;
+}
+
+function addAttrRow(key = "", value = "") {
+  $("pAttrs").appendChild(attrRow(key, value));
+}
+
+function collectAttrs() {
+  const out = {};
+  for (const row of document.querySelectorAll("#pAttrs .attr-row")) {
+    const k = row.querySelector(".attr-key").value.trim();
+    const v = row.querySelector(".attr-val").value.trim();
+    if (k) out[k] = v;
+  }
+  return out;
+}
+
+function attrsText(attrs) {
+  return Object.entries(attrs || {})
+    .map(([k, v]) => k + "：" + v)
+    .join(" · ");
+}
+
 async function loadProducts() {
   try {
     const data = await api("/api/products");
@@ -528,9 +615,11 @@ async function loadProducts() {
       const li = document.createElement("li");
       li.className = "cust-item";
       const bits = [p.spec, p.price].filter(Boolean).join(" · ");
+      const extra = attrsText(p.attrs);
       li.innerHTML =
         '<div class="cust-name">' + escapeHtml(p.name) + "</div>" +
         '<div class="cust-meta">' + (bits ? "<span>" + escapeHtml(bits) + "</span>" : "") +
+        (extra ? "<span>" + escapeHtml(extra) + "</span>" : "") +
         "<span>" + escapeHtml(formatTime(p.created_at)) + "</span></div>";
       const del = document.createElement("button");
       del.className = "ghost danger";
@@ -558,11 +647,13 @@ async function createProduct() {
         name,
         spec: $("pSpec").value.trim(),
         price: $("pPrice").value.trim(),
+        attrs: collectAttrs(),
       }),
     });
     $("pName").value = "";
     $("pSpec").value = "";
     $("pPrice").value = "";
+    $("pAttrs").innerHTML = "";
     setText($("prodMsg"), "已加：" + name);
     $("pName").focus();
     await loadProducts();
@@ -586,6 +677,7 @@ async function deleteProduct(pid, name) {
 // 做成树必然卡在「这条该挂哪个枝」，chip 可以一次挂多个。
 
 let TAGS = []; // 在用的标签
+let ALL_TAGS = []; // 含停用的（管理区用）
 let TAG_GROUPS = []; // 来源 / 类型 / 场景（后端给，避免前后端各写一份）
 let TPL_SELECTED = new Set(); // 表单里选中的标签 id
 let TPL_EDIT_ID = null; // 正在编辑的模板 id（null = 新建）
@@ -666,8 +758,97 @@ async function loadTags() {
       sel.appendChild(o);
     }
     renderTagPicker();
+    // 管理区要连停用的一起看（否则删不掉的标签会永远藏在暗处）
+    const all = await api("/api/tags?include_inactive=1");
+    ALL_TAGS = all.items;
+    renderTagAdmin();
   } catch (err) {
     setText($("tplMsg"), err.message);
+  }
+}
+
+// 标签管理：删掉不用的、把重复的合并成一个。
+// 不整理的话标签只会越攒越乱（FB / facebook / 脸书 三条并存）。
+function renderTagAdmin() {
+  const box = $("tagAdmin");
+  if (!box) return;
+  box.innerHTML = "";
+  for (const grp of TAG_GROUPS) {
+    const list = ALL_TAGS.filter((t) => t.grp === grp);
+    if (!list.length) continue;
+    const row = document.createElement("div");
+    row.className = "tag-admin-row";
+    const label = document.createElement("span");
+    label.className = "tag-row-label";
+    label.textContent = grp;
+    row.appendChild(label);
+
+    for (const t of list) {
+      const item = document.createElement("span");
+      item.className = "tag-admin-item" + (t.is_active ? "" : " off");
+      item.append(document.createTextNode(t.name + " "));
+      const count = document.createElement("b");
+      count.textContent = "(" + t.use_count + ")";
+      item.appendChild(count);
+
+      const others = list.filter((x) => x.id !== t.id);
+      if (others.length) {
+        const merge = document.createElement("select");
+        merge.className = "tag-merge-select";
+        const blank = document.createElement("option");
+        blank.value = "";
+        blank.textContent = "并到…";
+        merge.appendChild(blank);
+        for (const other of others) {
+          const o = document.createElement("option");
+          o.value = other.id;
+          o.textContent = other.name;
+          merge.appendChild(o);
+        }
+        merge.addEventListener("change", () => {
+          if (merge.value) mergeTag(t.id, Number(merge.value), t.name);
+        });
+        item.appendChild(merge);
+      }
+
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "ghost danger tag-del";
+      del.textContent = "删";
+      del.addEventListener("click", () => deleteTag(t));
+      item.appendChild(del);
+      row.appendChild(item);
+    }
+    box.appendChild(row);
+  }
+}
+
+async function deleteTag(t) {
+  const used = t.use_count ? "有 " + t.use_count + " 个模板在用，" : "";
+  if (!confirm("删掉标签「" + t.name + "」？" + used + "删了不能恢复。\n（只想暂时不用它，可以改成停用）"))
+    return;
+  try {
+    await api("/api/tags/" + t.id, { method: "DELETE" });
+    setText($("tagMsg"), "已删除：" + t.name);
+    await loadTags();
+    await loadTemplates();
+  } catch (err) {
+    setText($("tagMsg"), err.message);
+  }
+}
+
+async function mergeTag(fromId, intoId, name) {
+  if (!confirm("把「" + name + "」合并过去？合并后这个标签消失，原来的模板会换成新的那个。")) return;
+  try {
+    await api("/api/tags/" + fromId + "/merge", {
+      method: "POST",
+      body: JSON.stringify({ into_id: intoId }),
+    });
+    setText($("tagMsg"), "已合并：" + name);
+    await loadTags();
+    await loadTemplates();
+  } catch (err) {
+    setText($("tagMsg"), err.message);
   }
 }
 
@@ -892,7 +1073,15 @@ async function doGenerate() {
     });
     $("genText").value = d.output;
     $("genOut").hidden = false;
-    setText($("genMsg"), "已生成（" + d.model + "）。改完再复制——AI 出草稿，人负责。");
+    // 把「依据什么生成的」说清楚——业务能核对，AI 就不是黑箱
+    const b = d.basis || {};
+    const parts = ["客户资料"];
+    parts.push(b.followups ? b.followups + " 条跟进" : "还没有跟进记录");
+    if (b.template) parts.push("模板「" + b.template + "」");
+    setText(
+      $("genMsg"),
+      "已生成（" + d.model + "）。依据：" + parts.join(" + ") + "。改完再复制——AI 出草稿，人负责。"
+    );
     await loadGenerations(CURRENT);
     await loadCustomers(); // 模板的使用次数变了，列表上的「用过 N 次」要跟上
   } catch (err) {
@@ -912,6 +1101,211 @@ async function copyGen() {
     $("genText").select();
     setText($("genMsg"), "浏览器不让直接复制，已帮你选中，按 Ctrl+C。");
   }
+}
+
+// ---------- 日历看板：给自己排「哪天联系谁」 ----------
+// 红点 = 今天及以前还没做完的条数（昨天漏掉的今天更该提醒）。
+
+let CAL_MONTH = new Date();
+CAL_MONTH.setDate(1);
+let CAL_SELECTED = new Date();
+let REMINDERS = {}; // "YYYY-MM-DD" -> [提醒]
+
+function ymd(d) {
+  const p = (n) => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+}
+
+async function loadReminders() {
+  const first = new Date(CAL_MONTH);
+  const last = new Date(CAL_MONTH.getFullYear(), CAL_MONTH.getMonth() + 1, 0);
+  try {
+    const d = await api(
+      "/api/reminders?date_from=" + ymd(first) + "&date_to=" + ymd(last)
+    );
+    REMINDERS = {};
+    for (const r of d.items) {
+      const key = String(r.due_date).slice(0, 10);
+      (REMINDERS[key] = REMINDERS[key] || []).push(r);
+    }
+  } catch (err) {
+    setText($("remMsg"), err.message);
+  }
+  renderCalendar();
+  renderDay();
+}
+
+function renderCalendar() {
+  $("calTitle").textContent =
+    CAL_MONTH.getFullYear() + " 年 " + (CAL_MONTH.getMonth() + 1) + " 月";
+  const grid = $("calGrid");
+  grid.innerHTML = "";
+  const startWeekday = (CAL_MONTH.getDay() + 6) % 7; // 周一当一周第一天
+  const daysInMonth = new Date(
+    CAL_MONTH.getFullYear(),
+    CAL_MONTH.getMonth() + 1,
+    0
+  ).getDate();
+  const todayKey = ymd(new Date());
+  const selKey = ymd(CAL_SELECTED);
+
+  for (let i = 0; i < startWeekday; i++) {
+    const blank = document.createElement("div");
+    blank.className = "cal-cell empty";
+    grid.appendChild(blank);
+  }
+  for (let day = 1; day <= daysInMonth; day++) {
+    const date = new Date(CAL_MONTH.getFullYear(), CAL_MONTH.getMonth(), day);
+    const key = ymd(date);
+    const pending = (REMINDERS[key] || []).filter((x) => !x.done).length;
+    const cell = document.createElement("button");
+    cell.type = "button";
+    cell.className =
+      "cal-cell" + (key === todayKey ? " today" : "") + (key === selKey ? " selected" : "");
+    const num = document.createElement("span");
+    num.className = "cal-num";
+    num.textContent = String(day);
+    cell.appendChild(num);
+    if (pending) {
+      const dot = document.createElement("span");
+      dot.className = "cal-dot";
+      dot.textContent = String(pending);
+      cell.appendChild(dot);
+    }
+    cell.addEventListener("click", () => {
+      CAL_SELECTED = date;
+      renderCalendar();
+      renderDay();
+    });
+    grid.appendChild(cell);
+  }
+}
+
+function renderDay() {
+  const key = ymd(CAL_SELECTED);
+  $("calDayTitle").textContent =
+    CAL_SELECTED.getMonth() + 1 + " 月 " + CAL_SELECTED.getDate() + " 日安排";
+  const ul = $("calList");
+  ul.innerHTML = "";
+  const items = REMINDERS[key] || [];
+  if (!items.length) {
+    const li = document.createElement("li");
+    li.className = "hint";
+    li.textContent = "这一天还没有安排。下面选个客户，加到这一天。";
+    ul.appendChild(li);
+    return;
+  }
+  for (const r of items) {
+    const li = document.createElement("li");
+    li.className = "cust-item rem-item" + (r.done ? " done" : "");
+    const name = document.createElement("div");
+    name.className = "cust-name";
+    name.textContent = r.contact_name + (r.company ? " · " + r.company : "");
+    const note = document.createElement("div");
+    note.className = "cust-meta";
+    note.textContent = r.done ? "已联系" : r.note || "（没写备注）";
+    const actions = document.createElement("div");
+    actions.className = "tpl-actions";
+    const done = document.createElement("button");
+    done.type = "button";
+    done.className = "ghost";
+    done.textContent = r.done ? "撤销完成" : "标为已联系";
+    done.addEventListener("click", () => toggleReminder(r));
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "ghost danger";
+    del.textContent = "删";
+    del.addEventListener("click", () => deleteReminder(r));
+    actions.append(done, del);
+    li.append(name, note, actions);
+    ul.appendChild(li);
+  }
+}
+
+async function toggleReminder(r) {
+  try {
+    await api("/api/reminders/" + r.id, {
+      method: "PATCH",
+      body: JSON.stringify({ done: !r.done }),
+    });
+    await refreshReminders();
+  } catch (err) {
+    setText($("remMsg"), err.message);
+  }
+}
+
+async function deleteReminder(r) {
+  if (!confirm("删掉这条提醒？")) return;
+  try {
+    await api("/api/reminders/" + r.id, { method: "DELETE" });
+    await refreshReminders();
+  } catch (err) {
+    setText($("remMsg"), err.message);
+  }
+}
+
+async function addReminder() {
+  const cid = $("remCustomer").value;
+  if (!cid) return setText($("remMsg"), "先选一个客户");
+  try {
+    await api("/api/reminders", {
+      method: "POST",
+      body: JSON.stringify({
+        customer_id: Number(cid),
+        due_date: ymd(CAL_SELECTED),
+        note: $("remNote").value.trim(),
+      }),
+    });
+    $("remNote").value = "";
+    setText($("remMsg"), "已加到 " + ymd(CAL_SELECTED));
+    await refreshReminders();
+  } catch (err) {
+    setText($("remMsg"), err.message);
+  }
+}
+
+async function loadReminderCustomers() {
+  try {
+    const d = await api("/api/customers");
+    const sel = $("remCustomer");
+    sel.innerHTML = "";
+    for (const c of d.items) {
+      const o = document.createElement("option");
+      o.value = c.id;
+      o.textContent = titleOf(c) + (c.company ? " · " + c.company : "");
+      sel.appendChild(o);
+    }
+  } catch (_) {
+    /* 客户列表取不到也不影响看日历 */
+  }
+}
+
+async function loadPendingCount() {
+  try {
+    const d = await api("/api/reminders/pending-count");
+    const badge = $("reminderBadge");
+    badge.textContent = d.count > 99 ? "99+" : String(d.count);
+    badge.hidden = d.count === 0;
+  } catch (_) {
+    /* 红点取不到就不显示，不打扰主流程 */
+  }
+}
+
+async function refreshReminders() {
+  await loadReminders();
+  await loadPendingCount();
+}
+
+function calShift(months) {
+  CAL_MONTH = new Date(CAL_MONTH.getFullYear(), CAL_MONTH.getMonth() + months, 1);
+  loadReminders();
+}
+
+function calGoToday() {
+  const now = new Date();
+  CAL_MONTH = new Date(now.getFullYear(), now.getMonth(), 1);
+  CAL_SELECTED = now;
+  loadReminders();
 }
 
 // ---------- 入口 ----------
@@ -948,6 +1342,15 @@ function bind() {
   // 生成话术
   $("doGenerate").addEventListener("click", doGenerate);
   $("copyGen").addEventListener("click", copyGen);
+
+  // 产品自定义属性
+  $("addAttr").addEventListener("click", () => addAttrRow());
+
+  // 日历看板
+  $("addReminder").addEventListener("click", addReminder);
+  $("calPrev").addEventListener("click", () => calShift(-1));
+  $("calNext").addEventListener("click", () => calShift(1));
+  $("calToday").addEventListener("click", calGoToday);
 
   $("createCustomer").addEventListener("click", createCustomer);
   // 「建档 ≤30 秒」：每个框都能回车提交，手不用离开键盘

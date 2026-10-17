@@ -14,6 +14,7 @@
     <div class="brand">外贸客户工作台</div>
     <nav class="nav" id="nav">
       <button class="nav-item active" data-view="customers">客户</button>
+      <button class="nav-item" data-view="calendar">日历<span id="reminderBadge" class="badge" hidden></span></button>
       <button class="nav-item" data-view="templates">话术库</button>
       <button class="nav-item" data-view="products">产品目录</button>
       <a class="nav-item" href="/">背调工具 ↗</a>
@@ -80,6 +81,7 @@
                   </div>
                 </div>
                 <p id="dMeta" class="hint"></p>
+                <p id="dContact" class="contact-line"></p>
                 <div class="stage-row">
                   <label class="stage-label" for="dStage">阶段</label>
                   <select id="dStage" aria-label="客户阶段"></select>
@@ -141,6 +143,8 @@
               <input id="pPrice" type="text" placeholder="参考价（选填）">
               <button id="createProduct">加产品</button>
             </div>
+            <div class="attr-rows" id="pAttrs"></div>
+            <button id="addAttr" type="button" class="ghost">+ 加一项属性（材质 / MOQ / 交期…）</button>
             <p id="prodMsg" class="status"></p>
           </section>
           <section class="card">
@@ -184,6 +188,39 @@
             </div>
             <div id="tplFilterTags" class="tag-picker filter"></div>
             <ul id="tplList" class="cust-list"></ul>
+          </section>
+
+          <section class="card">
+            <h2>标签管理 <span class="hint">删掉不用的、把重复的合并成一个</span></h2>
+            <p class="hint">括号里是「有几个模板在用它」。删掉会从这些模板上一起移走；合并会把旧标签换成新的。</p>
+            <div id="tagAdmin" class="tag-admin"></div>
+            <p id="tagMsg" class="status"></p>
+          </section>
+        </div>
+      </div>
+
+      <!-- 视图四：日历看板（给自己排「哪天联系谁」） -->
+      <div id="viewCalendar" class="view" hidden>
+        <div class="pane-main">
+          <section class="card">
+            <div class="cal-head">
+              <button id="calPrev" type="button" class="ghost" aria-label="上个月">←</button>
+              <h2 id="calTitle"></h2>
+              <button id="calNext" type="button" class="ghost" aria-label="下个月">→</button>
+              <button id="calToday" type="button" class="ghost">回到今天</button>
+            </div>
+            <div id="calGrid" class="cal-grid"></div>
+          </section>
+
+          <section class="card">
+            <h2 id="calDayTitle">当天安排</h2>
+            <ul id="calList" class="cust-list"></ul>
+            <div class="newrow" style="margin-top:12px">
+              <select id="remCustomer" class="tool-select" aria-label="选客户"></select>
+              <input id="remNote" type="text" placeholder="备注（例如：打电话确认数量）">
+              <button id="addReminder" type="button">加到这一天</button>
+            </div>
+            <p id="remMsg" class="status"></p>
           </section>
         </div>
       </div>
