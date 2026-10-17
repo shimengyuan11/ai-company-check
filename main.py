@@ -181,7 +181,7 @@ class FollowupRequest(BaseModel):
 
 # 客户阶段：固定五档，不做成可增长的词典（那会长草，见 PRD 对「标签 vs 分类树」的判断）。
 # 空值表示还没标阶段，界面上归到「未分组」。
-STAGES = ("新线索", "已联系", "已报价", "成交", "流失")
+STAGES = ("新线索", "已联系", "跟进中", "已报价", "成交", "流失")
 
 
 def _visible_customer(customer_id: int, user):
@@ -203,20 +203,25 @@ def api_users(request: Request):
 
 
 @app.get("/api/customers")
-def api_list_customers(request: Request, q: str = "", stage: str = "", sort: str = "recent"):
+def api_list_customers(
+    request: Request, q: str = "", stage: str = "", sort: str = "recent", idle_days: int = 0
+):
     """客户列表。
 
     - `q`：搜索词（姓名 / 公司 / 号码）
     - `stage`：阶段筛选；空 = 全部，`none` = 还没标阶段的
-    - `sort`：`recent` 最近建档在前（默认）/ `stale` 最久没联系在前（挑今天该跟谁）
+    - `sort`：`recent` 最近建档在前（默认）/ `stale` 最久没联系在前
+    - `idle_days`：只看「N 天及以上没联系」的（3 / 5 / 7 / 10 这几档由界面给）
     """
     user = auth.require_user(request)
     if stage and stage != "none" and stage not in STAGES:
         raise HTTPException(status_code=400, detail=f"不认识的客户阶段：{stage}")
     if sort not in ("recent", "stale"):
         raise HTTPException(status_code=400, detail=f"不认识的排序方式：{sort}")
+    if idle_days < 0:
+        raise HTTPException(status_code=400, detail="未联系天数不能是负数")
     return {
-        "items": db.list_customers(user["id"], user["is_admin"], q, stage, sort),
+        "items": db.list_customers(user["id"], user["is_admin"], q, stage, sort, idle_days),
         "stages": list(STAGES),
     }
 
@@ -310,6 +315,30 @@ def api_add_followup(customer_id: int, req: FollowupRequest, request: Request):
     if not content:
         raise HTTPException(status_code=400, detail="跟进内容不能为空")
     return {"id": db.add_followup(customer_id, user["id"], content)}
+
+
+@app.patch("/api/customers/{customer_id}/followups/{followup_id}")
+def api_patch_followup(
+    customer_id: int, followup_id: int, req: FollowupRequest, request: Request
+):
+    """改一条跟进。写完发现漏了一句，就地补——不用删了重写。"""
+    user = auth.require_user(request)
+    _visible_customer(customer_id, user)
+    content = req.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="跟进内容不能为空")
+    if not db.update_followup(followup_id, customer_id, content):
+        raise HTTPException(status_code=404, detail="这条跟进不存在")
+    return {"ok": True}
+
+
+@app.delete("/api/customers/{customer_id}/followups/{followup_id}")
+def api_delete_followup(customer_id: int, followup_id: int, request: Request):
+    user = auth.require_user(request)
+    _visible_customer(customer_id, user)
+    if not db.delete_followup(followup_id, customer_id):
+        raise HTTPException(status_code=404, detail="这条跟进不存在")
+    return {"ok": True}
 
 
 @app.get("/api/options")
@@ -651,7 +680,9 @@ class ReminderRequest(BaseModel):
 
 
 class ReminderPatch(BaseModel):
-    done: bool
+    done: bool | None = None
+    note: str | None = None
+    due_date: str | None = None
 
 
 def _parse_date(text: str) -> dt.date:
@@ -691,9 +722,16 @@ def api_create_reminder(req: ReminderRequest, request: Request):
 
 @app.patch("/api/reminders/{reminder_id}")
 def api_patch_reminder(reminder_id: int, req: ReminderPatch, request: Request):
-    """标记做完 / 取消做完。做完就从红点里消失，记录还留着。"""
+    """改提醒：标做完 / 改备注 / 挪日期——传什么改什么。"""
     user = auth.require_user(request)
-    if not db.set_reminder_done(reminder_id, user["id"], req.done):
+    fields = {k: v for k, v in req.model_dump().items() if v is not None}
+    if "due_date" in fields:
+        fields["due_date"] = _parse_date(fields["due_date"])
+    if "note" in fields:
+        fields["note"] = fields["note"].strip()
+    if not fields:
+        raise HTTPException(status_code=400, detail="没有要改的内容")
+    if not db.update_reminder(reminder_id, user["id"], **fields):
         raise HTTPException(status_code=404, detail="提醒不存在")
     return {"ok": True}
 

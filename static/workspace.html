@@ -13,8 +13,8 @@
   <aside class="sidebar">
     <div class="brand">外贸客户工作台</div>
     <nav class="nav" id="nav">
-      <button class="nav-item active" data-view="customers">客户</button>
-      <button class="nav-item" data-view="calendar">日历<span id="reminderBadge" class="badge" hidden></span></button>
+      <button class="nav-item active" data-view="customers">客户信息</button>
+      <button class="nav-item" data-view="calendar">日历跟进<span id="reminderBadge" class="badge" hidden></span></button>
       <button class="nav-item" data-view="templates">话术库</button>
       <button class="nav-item" data-view="products">产品目录</button>
       <a class="nav-item" href="/">背调工具 ↗</a>
@@ -58,9 +58,12 @@
             <div class="list-tools">
               <input id="searchBox" type="search" class="search" placeholder="搜姓名 / 号码 / 公司">
               <select id="stageFilter" class="tool-select" aria-label="按阶段筛选"></select>
-              <select id="sortSelect" class="tool-select" aria-label="排序">
-                <option value="recent">最近建档</option>
-                <option value="stale">最久没联系</option>
+              <select id="idleFilter" class="tool-select" aria-label="按未联系天数筛选">
+                <option value="">全部客户</option>
+                <option value="3">3 天未联系</option>
+                <option value="5">5 天未联系</option>
+                <option value="7">7 天未联系</option>
+                <option value="10">10 天未联系</option>
               </select>
             </div>
             <ul id="custList" class="cust-list"></ul>

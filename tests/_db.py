@@ -78,6 +78,21 @@ def ensure_admin():
     return ADMIN["user"]
 
 
+TEST_URL = f"{DIRECT_URL}{_sep}options=-c%20search_path%3D{SCHEMA}"
+
+
+def sql(statement, params=()):
+    """直接在测试库里跑一条 SQL。
+
+    用来造「历史数据」——比如把某条客户的 created_at 往前挪几天，
+    好让「未联系天数」这类按时间算的功能有东西可测。
+    UPDATE 这类没有结果集的语句返回空列表（psycopg 对无结果集调 fetchall 会抛错）。
+    """
+    with psycopg.connect(TEST_URL, autocommit=True) as conn:
+        cur = conn.execute(statement, params)
+        return cur.fetchall() if cur.description else []
+
+
 def cleanup():
     """进程退出时收摊：先关池，再删 schema。"""
     try:

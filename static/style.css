@@ -478,8 +478,8 @@ textarea::placeholder { color: var(--text-3); }
 
 /* ---------------- 未联系天数（列表与详情共用一句话） ---------------- */
 .contact-line { margin: var(--sp-2) 0 0; font-size: var(--fs-2); color: var(--text-2); }
-.cust-meta .contact { color: var(--text-3); }
-.cust-meta .contact.warn { color: var(--warn); font-weight: 600; }
+.cust-meta .contact, .contact { color: var(--text-3); }
+.contact.warn, .cust-meta .contact.warn { color: var(--warn); font-weight: 600; }
 
 /* ---------------- 左导航红点 ---------------- */
 .nav-item .badge {
@@ -535,3 +535,26 @@ textarea::placeholder { color: var(--text-3); }
 .attr-row input { flex: 1 1 120px; margin-bottom: 0; }
 .attr-del { min-height: 34px; padding: 4px 10px; }
 #addAttr { margin-top: var(--sp-2); min-height: 32px; font-size: var(--fs-2); }
+
+/* ---------------- 客户列表：两栏 ----------------
+   左边「这是谁」，右边「多久没联系 / 跟进了几条」。
+   以前全堆在左边，一眼看不出重点，右侧对齐之后才好扫。 */
+.cust-row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); }
+.cust-main { flex: 1 1 auto; min-width: 0; }
+.cust-side {
+  flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end;
+  gap: 2px; text-align: right; white-space: nowrap;
+}
+.cust-fu { font-size: var(--fs-1); color: var(--text-3); }
+
+/* ---------------- 跟进条目：时间与操作一行，内容在下面 ---------------- */
+.fu-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
+.fu-actions { display: flex; gap: 4px; flex: 0 0 auto; }
+.fu-btn { min-height: 22px; padding: 1px 8px; font-size: var(--fs-1); }
+.fu-edit { margin-top: var(--sp-2); }
+.fu-edit textarea { font-size: var(--fs-2); }
+.fu-edit-actions { display: flex; gap: var(--sp-2); margin-top: 4px; }
+.fu-edit-actions button { min-height: 28px; padding: 2px 12px; font-size: var(--fs-2); }
+
+/* 产品卡片的操作按钮靠右 */
+.prod-actions { margin-left: auto; display: flex; gap: 4px; }

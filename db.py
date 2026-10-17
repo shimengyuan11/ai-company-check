@@ -16,7 +16,7 @@
 import atexit
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from dotenv import load_dotenv
 from psycopg.rows import dict_row
@@ -448,7 +448,7 @@ def list_options(kind):
     return [r["value"] for r in rows]
 
 
-def list_customers(owner_id, is_admin=False, q="", stage="", sort="recent"):
+def list_customers(owner_id, is_admin=False, q="", stage="", sort="recent", idle_days=0):
     """客户列表。普通人只看自己的；管理员看全部。
 
     每条带上「有多少条跟进」和「最后一次跟进是什么时候」——列表页一眼能看出谁很久没跟了。
@@ -457,7 +457,8 @@ def list_customers(owner_id, is_admin=False, q="", stage="", sort="recent"):
     否则你搜 `13800001234`，就找不到人家录成 `+86 138 0000 1234` 的那条。
 
     stage：空 = 全部；`none` = 还没标阶段的；其余按阶段精确匹配。
-    sort：`recent`（默认，最近建档在前）/ `stale`（最久没联系在前，用来挑今天该跟谁）。
+    sort：`recent`（默认，最近建档在前）/ `stale`（最久没联系在前）。
+    idle_days：只看「N 天及以上没联系」的客户——门槛就落在这里，别让前端自己算。
     """
     q = (q or "").strip()
     stage = (stage or "").strip()
@@ -487,6 +488,18 @@ def list_customers(owner_id, is_admin=False, q="", stage="", sort="recent"):
     elif stage:
         sql += " AND c.stage = %s"
         params.append(stage)
+    if idle_days:
+        # 「多久没联系」= 最后一条跟进；没跟进过就退回建档时间。两个都是同格式 UTC 字符串。
+        threshold = (datetime.now(timezone.utc) - timedelta(days=int(idle_days))).isoformat(
+            timespec="seconds"
+        )
+        sql += """
+          AND coalesce(
+              (SELECT max(f.created_at) FROM followups f WHERE f.customer_id = c.id),
+              c.created_at
+          ) <= %s
+        """
+        params.append(threshold)
     if sort == "stale":
         # created_at / last_followup_at 都是同格式的 ISO(UTC) 字符串，直接比字符串就等价于比时间
         sql += """
@@ -588,6 +601,25 @@ def list_followups(customer_id):
             """,
             (customer_id,),
         ).fetchall()
+
+
+def update_followup(followup_id, customer_id, content):
+    """改一条跟进。customer_id 也进条件——免得用一对 id 改到别处的记录。"""
+    with pool.connection() as conn:
+        cur = conn.execute(
+            "UPDATE followups SET content = %s WHERE id = %s AND customer_id = %s",
+            (content, followup_id, customer_id),
+        )
+        return cur.rowcount > 0
+
+
+def delete_followup(followup_id, customer_id):
+    with pool.connection() as conn:
+        cur = conn.execute(
+            "DELETE FROM followups WHERE id = %s AND customer_id = %s",
+            (followup_id, customer_id),
+        )
+        return cur.rowcount > 0
 
 
 # ===================== V2：附件 =====================
@@ -748,6 +780,28 @@ def set_reminder_done(reminder_id, user_id, done):
         cur = conn.execute(
             "UPDATE reminders SET done = %s WHERE id = %s AND user_id = %s",
             (bool(done), reminder_id, user_id),
+        )
+        return cur.rowcount > 0
+
+
+def update_reminder(reminder_id, user_id, done=None, note=None, due_date=None):
+    """改提醒：完成状态 / 备注 / 日期，传什么改什么（没传的不动）。"""
+    sets, values = [], []
+    if done is not None:
+        sets.append("done = %s")
+        values.append(bool(done))
+    if note is not None:
+        sets.append("note = %s")
+        values.append(note)
+    if due_date is not None:
+        sets.append("due_date = %s")
+        values.append(due_date)
+    if not sets:
+        return False
+    values += [reminder_id, user_id]
+    with pool.connection() as conn:
+        cur = conn.execute(
+            f"UPDATE reminders SET {', '.join(sets)} WHERE id = %s AND user_id = %s", values
         )
         return cur.rowcount > 0
 

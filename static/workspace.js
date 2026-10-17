@@ -13,8 +13,8 @@ const $ = (id) => document.getElementById(id);
 let CURRENT = null; // 当前打开的客户 id
 let SEARCH = ""; // 当前搜索词
 let STAGE_FILTER = ""; // 阶段筛选："" = 全部，"none" = 未分组，其余为具体阶段
-let SORT = "recent"; // recent（最近建档）/ stale（最久没联系）
-let STAGES = []; // 后端给的固定五档，避免前后端各写一份
+let IDLE_DAYS = ""; // 未联系天数筛选："" = 全部，其余是 3 / 5 / 7 / 10
+let STAGES = []; // 后端给的固定档位，避免前后端各写一份
 
 // 阶段 → 标签配色的修饰类
 const STAGE_CLASS = {
@@ -194,7 +194,7 @@ async function loadCustomers() {
     const p = new URLSearchParams();
     if (SEARCH) p.set("q", SEARCH);
     if (STAGE_FILTER) p.set("stage", STAGE_FILTER);
-    if (SORT !== "recent") p.set("sort", SORT);
+    if (IDLE_DAYS) p.set("idle_days", IDLE_DAYS);
     const qs = p.toString();
     const data = await api("/api/customers" + (qs ? "?" + qs : ""));
     // 只在阶段列表变化时重建下拉——每次都重建会打断用户正在做的选择
@@ -232,12 +232,19 @@ async function loadCustomers() {
       const sub = [c.company, c.country].filter(Boolean).join(" · ");
       const st = contactStatus(c);
       const stCls = st.days !== null && st.days >= 7 ? "contact warn" : "contact";
+      // 两栏：左边是「这是谁」，右边是「多久没联系 + 跟进了几条」。
+      // 全挤在左边会一长条看不清重点，右侧对齐才好扫。
       li.innerHTML =
+        '<div class="cust-row">' +
+        '<div class="cust-main">' +
         '<div class="cust-name">' + escapeHtml(titleOf(c)) + "</div>" +
         '<div class="cust-meta">' + tags.join("") +
         (sub ? "<span>" + escapeHtml(sub) + "</span>" : "") +
+        "</div></div>" +
+        '<div class="cust-side">' +
         '<span class="' + stCls + '">' + escapeHtml(st.text) + "</span>" +
-        "<span>跟进 " + c.followup_count + " 条</span></div>";
+        '<span class="cust-fu">跟进 ' + c.followup_count + " 条</span>" +
+        "</div></div>";
       li.addEventListener("click", () => openCustomer(c.id));
       list.appendChild(li);
     }
@@ -328,11 +335,87 @@ async function loadFollowups(id) {
   for (const f of data.items) {
     const li = document.createElement("li");
     li.className = "fu-item";
-    li.innerHTML =
-      '<span class="fu-time">' + escapeHtml(formatTime(f.created_at)) +
-      " · " + escapeHtml(f.display_name || f.username) + "</span>" +
-      '<span class="fu-content">' + escapeHtml(f.content) + "</span>";
+
+    const head = document.createElement("div");
+    head.className = "fu-head";
+    const time = document.createElement("span");
+    time.className = "fu-time";
+    time.textContent = formatTime(f.created_at) + " · " + (f.display_name || f.username);
+
+    const actions = document.createElement("span");
+    actions.className = "fu-actions";
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "ghost fu-btn";
+    edit.textContent = "编辑";
+    edit.addEventListener("click", () => startEditFollowup(li, f));
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "ghost danger fu-btn";
+    del.textContent = "删";
+    del.addEventListener("click", () => deleteFollowup(f));
+    actions.append(edit, del);
+    head.append(time, actions);
+
+    const content = document.createElement("span");
+    content.className = "fu-content";
+    content.textContent = f.content;
+
+    li.append(head, content);
     ul.appendChild(li);
+  }
+}
+
+// 就地编辑：写完跟进发现漏了一句，直接在这条上补，不用删了重写
+function startEditFollowup(li, f) {
+  if (li.querySelector(".fu-edit")) return;
+  const box = document.createElement("div");
+  box.className = "fu-edit";
+  const area = document.createElement("textarea");
+  area.rows = 2;
+  area.value = f.content;
+  const row = document.createElement("div");
+  row.className = "fu-edit-actions";
+  const save = document.createElement("button");
+  save.type = "button";
+  save.textContent = "保存";
+  save.addEventListener("click", () => saveFollowup(f, area.value));
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "ghost";
+  cancel.textContent = "取消";
+  cancel.addEventListener("click", () => box.remove());
+  row.append(save, cancel);
+  box.append(area, row);
+  li.appendChild(box);
+  area.focus();
+}
+
+async function saveFollowup(f, content) {
+  const text = (content || "").trim();
+  if (!text) return setText($("appMsg"), "跟进内容不能为空");
+  try {
+    await api("/api/customers/" + CURRENT + "/followups/" + f.id, {
+      method: "PATCH",
+      body: JSON.stringify({ content: text }),
+    });
+    setText($("appMsg"), "已更新这条跟进。");
+    await loadFollowups(CURRENT);
+    await loadCustomers();
+  } catch (err) {
+    setText($("appMsg"), err.message);
+  }
+}
+
+async function deleteFollowup(f) {
+  if (!confirm("删掉这条跟进？不能恢复。")) return;
+  try {
+    await api("/api/customers/" + CURRENT + "/followups/" + f.id, { method: "DELETE" });
+    setText($("appMsg"), "已删除这条跟进。");
+    await loadFollowups(CURRENT);
+    await loadCustomers();
+  } catch (err) {
+    setText($("appMsg"), err.message);
   }
 }
 
@@ -621,15 +704,26 @@ async function loadProducts() {
         '<div class="cust-meta">' + (bits ? "<span>" + escapeHtml(bits) + "</span>" : "") +
         (extra ? "<span>" + escapeHtml(extra) + "</span>" : "") +
         "<span>" + escapeHtml(formatTime(p.created_at)) + "</span></div>";
+      const actions = document.createElement("span");
+      actions.className = "prod-actions";
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "ghost fu-btn";
+      edit.textContent = "编辑";
+      edit.addEventListener("click", (e) => {
+        e.stopPropagation();
+        startEditProduct(p);
+      });
       const del = document.createElement("button");
-      del.className = "ghost danger";
+      del.type = "button";
+      del.className = "ghost danger fu-btn";
       del.textContent = "删";
-      del.style.marginLeft = "auto";
       del.addEventListener("click", (e) => {
         e.stopPropagation();
         deleteProduct(p.id, p.name);
       });
-      li.querySelector(".cust-meta").appendChild(del);
+      actions.append(edit, del);
+      li.querySelector(".cust-meta").appendChild(actions);
       ul.appendChild(li);
     }
   } catch (err) {
@@ -640,26 +734,48 @@ async function loadProducts() {
 async function createProduct() {
   const name = $("pName").value.trim();
   if (!name) return setText($("prodMsg"), "产品名必填");
+  const payload = {
+    name,
+    spec: $("pSpec").value.trim(),
+    price: $("pPrice").value.trim(),
+    attrs: collectAttrs(),
+  };
   try {
-    await api("/api/products", {
-      method: "POST",
-      body: JSON.stringify({
-        name,
-        spec: $("pSpec").value.trim(),
-        price: $("pPrice").value.trim(),
-        attrs: collectAttrs(),
-      }),
-    });
-    $("pName").value = "";
-    $("pSpec").value = "";
-    $("pPrice").value = "";
-    $("pAttrs").innerHTML = "";
-    setText($("prodMsg"), "已加：" + name);
-    $("pName").focus();
+    if (PROD_EDIT_ID) {
+      await api("/api/products/" + PROD_EDIT_ID, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      setText($("prodMsg"), "已保存修改：" + name);
+    } else {
+      await api("/api/products", { method: "POST", body: JSON.stringify(payload) });
+      setText($("prodMsg"), "已加：" + name);
+    }
+    resetProductForm();
     await loadProducts();
   } catch (err) {
     setText($("prodMsg"), err.message);
   }
+}
+
+function resetProductForm() {
+  PROD_EDIT_ID = null;
+  $("pName").value = "";
+  $("pSpec").value = "";
+  $("pPrice").value = "";
+  $("pAttrs").innerHTML = "";
+  $("createProduct").textContent = "加产品";
+}
+
+function startEditProduct(p) {
+  PROD_EDIT_ID = p.id;
+  $("pName").value = p.name;
+  $("pSpec").value = p.spec || "";
+  $("pPrice").value = p.price || "";
+  $("pAttrs").innerHTML = "";
+  for (const [k, v] of Object.entries(p.attrs || {})) addAttrRow(k, v);
+  $("createProduct").textContent = "保存修改";
+  $("pName").focus();
 }
 
 async function deleteProduct(pid, name) {
@@ -683,6 +799,7 @@ let TPL_SELECTED = new Set(); // 表单里选中的标签 id
 let TPL_EDIT_ID = null; // 正在编辑的模板 id（null = 新建）
 let TPL_FILTER_TAG = null; // 列表按哪个标签筛
 let TPL_SEARCH = "";
+let PROD_EDIT_ID = null; // 正在编辑的产品 id（null = 新增）
 
 function tagRow(grp, list, isOn, onClick) {
   const row = document.createElement("div");
@@ -1206,6 +1323,11 @@ function renderDay() {
     note.textContent = r.done ? "已联系" : r.note || "（没写备注）";
     const actions = document.createElement("div");
     actions.className = "tpl-actions";
+    const noteBtn = document.createElement("button");
+    noteBtn.type = "button";
+    noteBtn.className = "ghost";
+    noteBtn.textContent = "改备注";
+    noteBtn.addEventListener("click", () => editReminderNote(r));
     const done = document.createElement("button");
     done.type = "button";
     done.className = "ghost";
@@ -1216,7 +1338,7 @@ function renderDay() {
     del.className = "ghost danger";
     del.textContent = "删";
     del.addEventListener("click", () => deleteReminder(r));
-    actions.append(done, del);
+    actions.append(noteBtn, done, del);
     li.append(name, note, actions);
     ul.appendChild(li);
   }
@@ -1229,6 +1351,21 @@ async function toggleReminder(r) {
       body: JSON.stringify({ done: !r.done }),
     });
     await refreshReminders();
+  } catch (err) {
+    setText($("remMsg"), err.message);
+  }
+}
+
+async function editReminderNote(r) {
+  const note = prompt("改备注：", r.note || "");
+  if (note === null) return;
+  try {
+    await api("/api/reminders/" + r.id, {
+      method: "PATCH",
+      body: JSON.stringify({ note }),
+    });
+    await refreshReminders();
+    setText($("remMsg"), "备注已更新。");
   } catch (err) {
     setText($("remMsg"), err.message);
   }
@@ -1284,8 +1421,13 @@ async function loadPendingCount() {
   try {
     const d = await api("/api/reminders/pending-count");
     const badge = $("reminderBadge");
-    badge.textContent = d.count > 99 ? "99+" : String(d.count);
-    badge.hidden = d.count === 0;
+    if (d.count > 0) {
+      badge.textContent = d.count > 99 ? "99+" : String(d.count);
+      badge.hidden = false;
+    } else {
+      badge.textContent = ""; // 没有待办时连「0」都不留，免得导航里挂个空数
+      badge.hidden = true;
+    }
   } catch (_) {
     /* 红点取不到就不显示，不打扰主流程 */
   }
@@ -1327,8 +1469,8 @@ function bind() {
     STAGE_FILTER = $("stageFilter").value;
     loadCustomers();
   });
-  $("sortSelect").addEventListener("change", () => {
-    SORT = $("sortSelect").value;
+  $("idleFilter").addEventListener("change", () => {
+    IDLE_DAYS = $("idleFilter").value;
     loadCustomers();
   });
   $("dStage").addEventListener("change", changeStage);
