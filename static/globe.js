@@ -41,10 +41,10 @@ function start(host) {
   host.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  /* fov 30 + 距离 52：球（直径 20）占画面约七成，外圈轨道环也刚好吃进画幅，
-     不会像贴着画布边缘那样被裁掉一截 */
+  /* fov 30 + 距离 38：球（直径 20）占画布约 92% —— 一打开就是主视觉。
+     轨道环贴着球缘走，超出画幅的那一点点被裁掉是正常的，球体本身完整。 */
   const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 400);
-  camera.position.set(0, 6, 52);
+  camera.position.set(0, 4.5, 38);
 
   /* ---- 灯光：主光偏左上，让右侧自然进入夜面，城市灯才亮得出来 ------- */
   const keyLight = new THREE.DirectionalLight(0xffffff, 2.7);
@@ -89,8 +89,8 @@ function start(host) {
     new THREE.ShaderMaterial({
       uniforms: {
         uColor: { value: new THREE.Color(0x4fa3ff) },
-        uPower: { value: 3.4 },
-        uStrength: { value: 1.15 }
+        uPower: { value: 2.6 },
+        uStrength: { value: 1.05 }
       },
       vertexShader: /* glsl */`
         varying vec3 vN;
@@ -153,7 +153,7 @@ function start(host) {
 
   /* ---- 经纬网：像仪表盘刻度，给"高级"一点点秩序感 ------------------- */
   const gridMat = new THREE.LineBasicMaterial({
-    color: 0x74bcff, transparent: true, opacity: 0.14,
+    color: 0x74bcff, transparent: true, opacity: 0.18,
     blending: THREE.AdditiveBlending, depthWrite: false
   });
   const gridPts = [];
@@ -185,7 +185,7 @@ function start(host) {
   });
 
   const orbitA = new THREE.Group();
-  const RING_A = R * 1.26;
+  const RING_A = R * 1.06;
   const ring1 = new THREE.Mesh(new THREE.TorusGeometry(RING_A, 0.014, 8, 240), ringMatA);
   ring1.rotation.x = Math.PI / 2;
   orbitA.add(ring1);
@@ -193,7 +193,7 @@ function start(host) {
   earthGroup.add(orbitA);
 
   const orbitB = new THREE.Group();
-  const ring2 = new THREE.Mesh(new THREE.TorusGeometry(R * 1.40, 0.010, 8, 240), ringMatB);
+  const ring2 = new THREE.Mesh(new THREE.TorusGeometry(R * 1.14, 0.010, 8, 240), ringMatB);
   ring2.rotation.x = Math.PI / 2;
   orbitB.add(ring2);
   orbitB.rotation.set(-0.55, 0, 0.85);
@@ -254,8 +254,9 @@ function start(host) {
   controls.enablePan = false;
   controls.rotateSpeed = 0.55;
   controls.zoomSpeed = 0.6;
-  controls.minDistance = 34;
-  controls.maxDistance = 80;
+  /* 缩放范围：能凑近看大陆细节，也能拉远看成一颗小地球 */
+  controls.minDistance = 20;
+  controls.maxDistance = 120;
   controls.minPolarAngle = 0.35;
   controls.maxPolarAngle = Math.PI - 0.35;
   controls.autoRotate = true;
