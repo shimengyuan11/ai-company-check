@@ -82,14 +82,21 @@ PITCH_PROMPT = """你是外贸业务的写作助手。用户会给你一段客�
 
 
 def generate_pitch(
-    customer: dict, template_body: str = "", request: str = "", followups=None
-) -> str:
-    """按客户 + 模板 + 要求 + 最近的跟进记录生成一条话术。返回正文。
+    customer: dict, template_body: str = "", request: str = "", followups=None, provider=None
+) -> dict:
+    """按客户 + 模板 + 要求 + 最近的跟进记录生成一条话术。
+
+    返回 `{"text", "tokens_in", "tokens_out", "model"}`——带上用量，好按人算账。
 
     customer 传 db.get_customer 那一行即可（姓名 / 公司 / 国家 / 阶段 / 备注 / 来源）。
     followups 传最近的几条跟进（每条至少含 content / created_at）——「聊到哪了」
     才是写话术最要紧的上下文，缺了它生成的东西只能套模板。
+    provider 传 `{"base_url","api_key","model"}` 就用那个渠道；不传沿用 PITCH_LLM_* 配置。
     """
+    base_url = (provider or {}).get("base_url") or PITCH_BASE_URL
+    api_key = (provider or {}).get("api_key") or PITCH_API_KEY
+    model = (provider or {}).get("model") or PITCH_MODEL
+
     bits = []
     for label, key in [
         ("姓名", "contact_name"),
@@ -120,10 +127,10 @@ def generate_pitch(
         user_content += "\n\n这次想达成：\n" + request.strip()
 
     response = httpx.post(
-        f"{PITCH_BASE_URL}/chat/completions",
-        headers={"Authorization": f"Bearer {PITCH_API_KEY}"},
+        f"{base_url}/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}"},
         json={
-            "model": PITCH_MODEL,
+            "model": model,
             "messages": [
                 {"role": "system", "content": PITCH_PROMPT},
                 {"role": "user", "content": user_content},
@@ -136,4 +143,10 @@ def generate_pitch(
     response.raise_for_status()
 
     data = response.json()
-    return data["choices"][0]["message"]["content"].strip()
+    usage = data.get("usage") or {}
+    return {
+        "text": (data["choices"][0]["message"]["content"] or "").strip(),
+        "tokens_in": int(usage.get("prompt_tokens") or 0),
+        "tokens_out": int(usage.get("completion_tokens") or 0),
+        "model": model,
+    }

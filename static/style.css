@@ -566,3 +566,8 @@ textarea::placeholder { color: var(--text-3); }
 }
 .detail-edit .newrow { margin-bottom: var(--sp-2); }
 .detail-edit input { margin-bottom: 0; }
+
+/* 智能体栏目：渠道卡片与额度行复用客户卡片骨架，这里只补一点间距 */
+#pvKey { font-family: inherit; }
+#limitList .cust-item { cursor: default; }
+#limitList input { max-width: 220px; margin-bottom: 0; }

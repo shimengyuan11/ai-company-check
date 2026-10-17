@@ -46,7 +46,7 @@ class GenerateRuleTest(unittest.TestCase):
             f"/api/customers/{self.c['id']}/generate", json={"request": "催他回邮件"}
         )
 
-    @patch("main.generate_pitch", return_value="草稿正文")
+    @patch("main.generate_pitch", return_value={"text": "草稿正文", "tokens_in": 10, "tokens_out": 20, "model": "test-model"})
     def test_basis_marks_thin_followups(self, _mock):
         """跟进不足 2 条时要标出来——草稿的依据薄，业务得知道。"""
         d = self._gen().json()
@@ -59,14 +59,14 @@ class GenerateRuleTest(unittest.TestCase):
         self.assertEqual(d2["basis"]["followups"], 2)
         self.assertTrue(d2["basis"]["reliable"], "够 2 条就算有依据")
 
-    @patch("main.generate_pitch", return_value="草稿正文")
+    @patch("main.generate_pitch", return_value={"text": "草稿正文", "tokens_in": 10, "tokens_out": 20, "model": "test-model"})
     def test_daily_limit(self, _mock):
         """每日限额：到点之后回 429，别让成本悄悄失控。"""
         codes = [self._gen().status_code for _ in range(LIMIT + 1)]
         self.assertEqual(codes[:LIMIT], [200] * LIMIT)
         self.assertEqual(codes[LIMIT], 429)
 
-    @patch("main.generate_pitch", return_value="草稿正文")
+    @patch("main.generate_pitch", return_value={"text": "草稿正文", "tokens_in": 10, "tokens_out": 20, "model": "test-model"})
     def test_limit_does_not_block_other_users(self, _mock):
         for _ in range(LIMIT):
             self._gen()
@@ -81,7 +81,7 @@ class GenerateRuleTest(unittest.TestCase):
         r = other.post(f"/api/customers/{c2['id']}/generate", json={"request": "催单"})
         self.assertEqual(r.status_code, 200, "限额按人算，不该误伤别人")
 
-    @patch("main.generate_pitch", return_value="草稿正文")
+    @patch("main.generate_pitch", return_value={"text": "草稿正文", "tokens_in": 10, "tokens_out": 20, "model": "test-model"})
     def test_followups_are_passed_to_model(self, mock):
         """最近几条跟进必须真的传给模型，否则「参照跟进」只是嘴上说说。"""
         for i in range(4):

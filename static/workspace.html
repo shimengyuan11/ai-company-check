@@ -17,6 +17,7 @@
       <button class="nav-item" data-view="calendar">日历跟进<span id="reminderBadge" class="badge" hidden></span></button>
       <button class="nav-item" data-view="templates">话术库</button>
       <button class="nav-item" data-view="products">产品目录</button>
+      <button class="nav-item" data-view="ai">智能体</button>
       <a class="nav-item" href="/">背调工具 ↗</a>
     </nav>
     <div class="sidebar-foot">
@@ -129,6 +130,7 @@
               <h3 class="section-title">生成话术</h3>
               <div class="newrow">
                 <select id="genTemplate" class="tool-select" aria-label="选模板"></select>
+                <select id="genProvider" class="tool-select" aria-label="选智能体"></select>
               </div>
               <div class="newrow" style="margin-top:8px">
                 <input id="genRequest" type="text" placeholder="想达成什么？例如：让他回邮件确认数量">
@@ -217,6 +219,39 @@
             <p class="hint">括号里是「有几个模板在用它」。删掉会从这些模板上一起移走；合并会把旧标签换成新的。</p>
             <div id="tagAdmin" class="tag-admin"></div>
             <p id="tagMsg" class="status"></p>
+          </section>
+        </div>
+      </div>
+
+      <!-- 视图五：智能体（管理员登记渠道 + 分配额度） -->
+      <div id="viewAi" class="view" hidden>
+        <div class="pane-main">
+          <section class="card" id="aiAdminCard" hidden>
+            <h2 id="pvFormTitle">添加智能体</h2>
+            <div class="newrow">
+              <input id="pvName" type="text" placeholder="显示名，如 DeepSeek 官方">
+              <input id="pvBase" type="text" placeholder="接口地址，如 https://api.deepseek.com">
+            </div>
+            <div class="newrow">
+              <input id="pvModel" type="text" placeholder="模型名，如 deepseek-chat">
+              <input id="pvKey" type="password" placeholder="API Key（加密保存，保存后不回显）">
+              <button id="saveProvider" type="button">保存</button>
+              <button id="cancelProvider" type="button" class="ghost" hidden>取消编辑</button>
+            </div>
+            <p id="pvMsg" class="status"></p>
+          </section>
+
+          <section class="card">
+            <h2>可用智能体 <span id="pvCount" class="hint"></span></h2>
+            <p class="hint">生成话术时可以在下拉里挑其中一个。Key 加密存库，页面上永远不回显。</p>
+            <ul id="pvList" class="cust-list"></ul>
+          </section>
+
+          <section class="card" id="limitCard" hidden>
+            <h2>月度额度 <span class="hint">0 = 不限</span></h2>
+            <p class="hint">按 token 算，每月 1 号重置。额度用完就停——同事用的是公司额度，不是谁的私人 key。</p>
+            <ul id="limitList" class="cust-list"></ul>
+            <p id="limitMsg" class="status"></p>
           </section>
         </div>
       </div>

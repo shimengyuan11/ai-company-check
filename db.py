@@ -18,6 +18,8 @@ import json
 import os
 from datetime import datetime, timedelta, timezone
 
+import secrets_store
+
 from dotenv import load_dotenv
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
@@ -194,6 +196,32 @@ def init_db():
             "CREATE INDEX IF NOT EXISTS idx_reminders_customer ON reminders(customer_id)"
         )
 
+        # —— 多智能体：管理员登记可用的 AI 渠道（key 加密存，页面上永远不回显）——
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ai_providers (
+                id         SERIAL PRIMARY KEY,
+                name       TEXT NOT NULL UNIQUE,
+                base_url   TEXT NOT NULL,
+                model      TEXT NOT NULL,
+                api_key    TEXT NOT NULL,
+                is_active  BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TEXT
+            )
+            """
+        )
+
+        # —— 每人每月的 token 额度：0 表示不限（内部成本控制的闸，不是对外收款）——
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_limits (
+                user_id       INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                monthly_tokens INTEGER NOT NULL DEFAULT 0,
+                updated_at    TEXT
+            )
+            """
+        )
+
         # —— 第 3 期：话术库 ——
         # 模板：**团队共享**（谁都能用、都能改），owner_id 只记录谁建的。
         # body 里支持 {客户名} {产品} {价格} 这类占位符——没有占位符模板就不能复用。
@@ -282,6 +310,17 @@ def init_db():
 
         # —— 老库升级：产品自定义属性（材质 / MOQ / 交期…），存 JSON 文本 ——
         conn.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS attrs TEXT")
+
+        # —— 老库升级：生成记录带上 token 用量，好按人算账 ——
+        conn.execute(
+            "ALTER TABLE generations ADD COLUMN IF NOT EXISTS tokens_in INTEGER DEFAULT 0"
+        )
+        conn.execute(
+            "ALTER TABLE generations ADD COLUMN IF NOT EXISTS tokens_out INTEGER DEFAULT 0"
+        )
+        conn.execute(
+            "ALTER TABLE generations ADD COLUMN IF NOT EXISTS provider_id INTEGER"
+        )
 
         # —— 预置默认标签（幂等：靠 UNIQUE(grp, name) 兜住，重复启动不会重复插）——
         for grp, names in DEFAULT_TAGS.items():
@@ -1029,13 +1068,20 @@ def bump_template_use(template_id):
         conn.execute("UPDATE templates SET use_count = use_count + 1 WHERE id = %s", (template_id,))
 
 
-def add_generation(customer_id, template_id, user_id, request, output, model):
+def add_generation(
+    customer_id, template_id, user_id, request, output, model,
+    tokens_in=0, tokens_out=0, provider_id=None,
+):
     with pool.connection() as conn:
         row = conn.execute(
             "INSERT INTO generations"
-            " (customer_id, template_id, user_id, request, output, model, created_at)"
-            " VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
-            (customer_id, template_id, user_id, request, output, model, _now()),
+            " (customer_id, template_id, user_id, request, output, model,"
+            "  tokens_in, tokens_out, provider_id, created_at)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (
+                customer_id, template_id, user_id, request, output, model,
+                int(tokens_in or 0), int(tokens_out or 0), provider_id, _now(),
+            ),
         ).fetchone()
     return row["id"]
 
@@ -1069,3 +1115,136 @@ def count_generations_since(user_id, since_iso):
             (user_id, since_iso),
         ).fetchone()
     return row["n"]
+
+
+# ===================== 多智能体（provider）与额度 =====================
+# 管理员在界面上登记可用的 AI 渠道；key 加密存库，接口层永远不回显。
+# 这是内部成本控制（谁能用、用多少），不涉及对外收款。
+
+
+def _provider_row(row, with_key=False):
+    """行 → dict。默认**不带 api_key**——接口层拿到的就是这个，漏不出去。"""
+    if row is None:
+        return None
+    out = {k: v for k, v in dict(row).items() if k != "api_key"}
+    out["has_key"] = bool(row.get("api_key"))
+    if with_key:
+        out["api_key"] = secrets_store.decrypt(row.get("api_key") or "")
+    return out
+
+
+def list_providers(include_inactive=False):
+    sql = "SELECT * FROM ai_providers"
+    if not include_inactive:
+        sql += " WHERE is_active = TRUE"
+    sql += " ORDER BY id"
+    with pool.connection() as conn:
+        rows = conn.execute(sql).fetchall()
+    return [_provider_row(r) for r in rows]
+
+
+def get_provider(provider_id, with_key=False):
+    with pool.connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM ai_providers WHERE id = %s", (provider_id,)
+        ).fetchone()
+    return _provider_row(row, with_key=with_key)
+
+
+def create_provider(name, base_url, model, api_key, is_active=True):
+    with pool.connection() as conn:
+        row = conn.execute(
+            "INSERT INTO ai_providers (name, base_url, model, api_key, is_active, created_at)"
+            " VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+            (name, base_url, model, secrets_store.encrypt(api_key), bool(is_active), _now()),
+        ).fetchone()
+    return row["id"]
+
+
+def update_provider(provider_id, **fields):
+    """改渠道。api_key 传了才换（传空串 = 清掉），不传就不动。"""
+    sets, values = [], []
+    for key in ("name", "base_url", "model", "is_active"):
+        if key in fields:
+            sets.append(f"{key} = %s")
+            values.append(fields[key])
+    if "api_key" in fields:
+        sets.append("api_key = %s")
+        values.append(secrets_store.encrypt(fields["api_key"]))
+    if not sets:
+        return get_provider(provider_id)
+    values.append(provider_id)
+    with pool.connection() as conn:
+        conn.execute(f"UPDATE ai_providers SET {', '.join(sets)} WHERE id = %s", values)
+    return get_provider(provider_id)
+
+
+def delete_provider(provider_id):
+    with pool.connection() as conn:
+        cur = conn.execute("DELETE FROM ai_providers WHERE id = %s", (provider_id,))
+        return cur.rowcount > 0
+
+
+def list_user_limits():
+    """所有用户 + 各自的月度额度（管理员分配时看的表）。"""
+    with pool.connection() as conn:
+        return conn.execute(
+            """
+            SELECT u.id, u.username, u.display_name, u.is_admin,
+                   coalesce(l.monthly_tokens, 0) AS monthly_tokens
+            FROM users u
+            LEFT JOIN user_limits l ON l.user_id = u.id
+            ORDER BY u.id
+            """
+        ).fetchall()
+
+
+def get_user_limit(user_id):
+    """某人每月 token 额度；0 或没配 = 不限。"""
+    with pool.connection() as conn:
+        row = conn.execute(
+            "SELECT monthly_tokens FROM user_limits WHERE user_id = %s", (user_id,)
+        ).fetchone()
+    return int((row["monthly_tokens"] if row else 0) or 0)
+
+
+def set_user_limit(user_id, monthly_tokens):
+    with pool.connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO user_limits (user_id, monthly_tokens, updated_at)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (user_id)
+            DO UPDATE SET monthly_tokens = EXCLUDED.monthly_tokens,
+                          updated_at = EXCLUDED.updated_at
+            """,
+            (user_id, int(monthly_tokens), _now()),
+        )
+
+
+def tokens_used_since(user_id, since_iso):
+    """某人从某时间点起用掉的 token 总数（输入 + 输出）——算额度用的。"""
+    with pool.connection() as conn:
+        row = conn.execute(
+            "SELECT coalesce(sum(coalesce(tokens_in,0) + coalesce(tokens_out,0)), 0) AS n"
+            " FROM generations WHERE user_id = %s AND created_at >= %s",
+            (user_id, since_iso),
+        ).fetchone()
+    return int(row["n"] or 0)
+
+
+def usage_by_user(since_iso):
+    """按人汇总用量——管理员看「谁用了多少、调了几次」。"""
+    with pool.connection() as conn:
+        return conn.execute(
+            """
+            SELECT u.id, u.username, u.display_name,
+                   count(g.id) AS calls,
+                   coalesce(sum(coalesce(g.tokens_in,0) + coalesce(g.tokens_out,0)), 0) AS tokens
+            FROM generations g JOIN users u ON u.id = g.user_id
+            WHERE g.created_at >= %s
+            GROUP BY u.id, u.username, u.display_name
+            ORDER BY tokens DESC
+            """,
+            (since_iso,),
+        ).fetchall()

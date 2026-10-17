@@ -613,6 +613,7 @@ LLM_DAILY_LIMIT = int(os.environ.get("LLM_DAILY_LIMIT", "100"))
 class GenerateRequest(BaseModel):
     template_id: int | None = None
     request: str = ""  # 「想达成什么」，例如：让他回邮件确认数量
+    provider_id: int | None = None  # 用哪个智能体；不选就用服务器默认那套
 
 
 @app.post("/api/customers/{customer_id}/generate")
@@ -638,12 +639,36 @@ def api_generate(customer_id: int, req: GenerateRequest, request: Request):
         template = db.get_template(req.template_id)
         if template is None:
             raise HTTPException(status_code=404, detail="模板不存在")
+    # 月度 token 额度（0 = 不限）：内部成本控制的闸，不是对外收款
+    limit = db.get_user_limit(user["id"])
+    if limit:
+        month_start = dt.datetime.now(dt.timezone.utc).replace(
+            day=1, hour=0, minute=0, second=0, microsecond=0
+        )
+        used_tokens = db.tokens_used_since(
+            user["id"], month_start.isoformat(timespec="seconds")
+        )
+        if used_tokens >= limit:
+            raise HTTPException(
+                status_code=429,
+                detail=f"本月额度用完了（已用 {used_tokens} / {limit} tokens），找管理员加额度。",
+            )
+
+    # 选哪个智能体——不选就走服务器默认那套
+    provider = None
+    if req.provider_id:
+        provider = db.get_provider(req.provider_id, with_key=True)
+        if provider is None or not provider["is_active"]:
+            raise HTTPException(status_code=404, detail="这个智能体不存在或已停用")
+        if not provider["api_key"]:
+            raise HTTPException(status_code=400, detail="这个智能体还没配 key")
+
     # 最近的跟进记录也喂进去——「聊到哪一步了」是写话术最关键的信息，
     # 只给客户资料的话，生成出来的东西跟谁都能套，业务还得自己改一遍。
     recent = db.list_followups(customer_id)[:3]
     try:
-        text = generate_pitch(
-            customer, template["body"] if template else "", req.request, recent
+        result = generate_pitch(
+            customer, template["body"] if template else "", req.request, recent, provider
         )
     except httpx.HTTPStatusError as e:
         raise HTTPException(
@@ -652,19 +677,31 @@ def api_generate(customer_id: int, req: GenerateRequest, request: Request):
         )
     except httpx.RequestError as e:
         raise HTTPException(status_code=502, detail=f"连不上模型服务：{type(e).__name__}")
-    if not text:
+    if not result.get("text"):
         raise HTTPException(status_code=502, detail="模型没有返回内容，再试一次")
 
     gid = db.add_generation(
-        customer_id, req.template_id, user["id"], req.request.strip(), text, PITCH_MODEL
+        customer_id,
+        req.template_id,
+        user["id"],
+        req.request.strip(),
+        result["text"],
+        result["model"],
+        result.get("tokens_in", 0),
+        result.get("tokens_out", 0),
+        req.provider_id,
     )
     if template:
         db.bump_template_use(template["id"])
     return {
         "id": gid,
-        "output": text,
-        "model": PITCH_MODEL,
+        "output": result["text"],
+        "model": result["model"],
         "template_title": template["title"] if template else None,
+        "tokens": {
+            "in": result.get("tokens_in", 0),
+            "out": result.get("tokens_out", 0),
+        },
         # 把「依据什么生成的」回给前端——业务能核对，AI 也就不再是黑箱
         "basis": {
             "customer": customer.get("contact_name") or "",
@@ -757,6 +794,126 @@ def api_delete_reminder(reminder_id: int, request: Request):
     user = auth.require_user(request)
     if not db.delete_reminder(reminder_id, user["id"]):
         raise HTTPException(status_code=404, detail="提醒不存在")
+    return {"ok": True}
+
+
+# ==================================================================
+# 智能体（多 provider）与额度
+# ==================================================================
+# 管理员登记可用渠道（key 加密存、接口永不回显），给每人分配月度 token 额度。
+# 这是内部成本控制，不涉及对外收款。
+
+
+class ProviderRequest(BaseModel):
+    name: str
+    base_url: str
+    model: str
+    api_key: str = ""
+    is_active: bool = True
+
+
+class ProviderPatch(BaseModel):
+    name: str | None = None
+    base_url: str | None = None
+    model: str | None = None
+    api_key: str | None = None
+    is_active: bool | None = None
+
+
+class LimitRequest(BaseModel):
+    monthly_tokens: int
+
+
+def _require_admin(request: Request):
+    user = auth.require_user(request)
+    if not user["is_admin"]:
+        raise HTTPException(status_code=403, detail="只有管理员能改智能体配置")
+    return user
+
+
+def _month_start_iso() -> str:
+    return dt.datetime.now(dt.timezone.utc).replace(
+        day=1, hour=0, minute=0, second=0, microsecond=0
+    ).isoformat(timespec="seconds")
+
+
+@app.get("/api/providers")
+def api_list_providers(request: Request):
+    """可用智能体。**永远不带 api_key**——普通同事也能看到有哪些可选。"""
+    user = auth.require_user(request)
+    return {"items": db.list_providers(include_inactive=bool(user["is_admin"]))}
+
+
+@app.post("/api/providers")
+def api_create_provider(req: ProviderRequest, request: Request):
+    _require_admin(request)
+    name = req.name.strip()
+    base_url = req.base_url.strip().rstrip("/")
+    model = req.model.strip()
+    if not name or not base_url or not model:
+        raise HTTPException(status_code=400, detail="名称、接口地址、模型名都要填")
+    pid = db.create_provider(name, base_url, model, req.api_key.strip(), req.is_active)
+    return db.get_provider(pid)
+
+
+@app.patch("/api/providers/{provider_id}")
+def api_patch_provider(provider_id: int, req: ProviderPatch, request: Request):
+    _require_admin(request)
+    fields = {k: v for k, v in req.model_dump().items() if v is not None}
+    for key in ("name", "base_url", "model"):
+        if key in fields:
+            fields[key] = fields[key].strip()
+            if not fields[key]:
+                raise HTTPException(status_code=400, detail=f"{key} 不能为空")
+    if "base_url" in fields:
+        fields["base_url"] = fields["base_url"].rstrip("/")
+    if "api_key" in fields:
+        fields["api_key"] = fields["api_key"].strip()
+    row = db.update_provider(provider_id, **fields)
+    if row is None:
+        raise HTTPException(status_code=404, detail="智能体不存在")
+    return row
+
+
+@app.delete("/api/providers/{provider_id}")
+def api_delete_provider(provider_id: int, request: Request):
+    _require_admin(request)
+    if not db.delete_provider(provider_id):
+        raise HTTPException(status_code=404, detail="智能体不存在")
+    return {"ok": True}
+
+
+@app.get("/api/limits")
+def api_list_limits(request: Request):
+    """管理员视角：每个人这个月用了多少、额度多少。"""
+    _require_admin(request)
+    usage = {r["id"]: r for r in db.usage_by_user(_month_start_iso())}
+    items = []
+    for u in db.list_user_limits():
+        used = usage.get(u["id"])
+        items.append(
+            {
+                "user_id": u["id"],
+                "username": u["username"],
+                "display_name": u["display_name"],
+                "is_admin": u["is_admin"],
+                "monthly_tokens": u["monthly_tokens"],
+                "used_tokens": int(used["tokens"]) if used else 0,
+                "calls": int(used["calls"]) if used else 0,
+            }
+        )
+    return {"items": items}
+
+
+@app.put("/api/limits/{user_id}")
+def api_set_limit(user_id: int, req: LimitRequest, request: Request):
+    """给某人设月度 token 额度；0 = 不限。"""
+    _require_admin(request)
+    if req.monthly_tokens < 0:
+        raise HTTPException(status_code=400, detail="额度不能是负数")
+    if db.get_user(user_id) is None:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    db.set_user_limit(user_id, req.monthly_tokens)
     return {"ok": True}
 
 

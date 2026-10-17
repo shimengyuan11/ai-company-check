@@ -114,6 +114,7 @@ function goLogin() {
 function showApp(user) {
   $("app").hidden = false;
   $("logout").hidden = false;
+  IS_ADMIN = !!user.is_admin;
   setText($("whoami"), user.display_name + (user.is_admin ? "（管理员）" : ""));
   setText($("build"), "build " + BUILD);
   $("newName").focus();
@@ -121,6 +122,7 @@ function showApp(user) {
   loadOptions();
   loadCustomers();
   loadPendingCount(); // 左导航「日历」旁的红点
+  loadProviders(); // 生成话术那个智能体下拉
 }
 
 async function logout() {
@@ -606,6 +608,7 @@ function switchView(name) {
   $("viewCalendar").hidden = name !== "calendar";
   $("viewTemplates").hidden = name !== "templates";
   $("viewProducts").hidden = name !== "products";
+  $("viewAi").hidden = name !== "ai";
   document.querySelectorAll(".nav-item[data-view]").forEach((el) => {
     el.classList.toggle("active", el.dataset.view === name);
   });
@@ -614,6 +617,7 @@ function switchView(name) {
     if (CURRENT) loadGenTemplates();
   }
   if (name === "products") loadProducts();
+  if (name === "ai") loadAiView();
   if (name === "templates") {
     loadTags();
     loadTemplates();
@@ -1251,6 +1255,8 @@ async function doGenerate() {
     const payload = { request: $("genRequest").value.trim() };
     const tplId = $("genTemplate").value;
     if (tplId) payload.template_id = Number(tplId);
+    const provId = $("genProvider").value;
+    if (provId) payload.provider_id = Number(provId);
     const d = await api("/api/customers/" + CURRENT + "/generate", {
       method: "POST",
       body: JSON.stringify(payload),
@@ -1519,6 +1525,214 @@ function calGoToday() {
   loadReminders();
 }
 
+// ---------- 智能体（管理员登记渠道 + 分配月度额度） ----------
+// 注意：这里**不涉及对外收款**。管理员配的是公司自己申请的 key，
+// 额度是内部成本控制——同事用公司额度，不是谁的私人钱包。
+
+let PROVIDERS = [];
+let PROV_EDIT_ID = null;
+let IS_ADMIN = false;
+
+async function loadProviders() {
+  try {
+    const d = await api("/api/providers");
+    PROVIDERS = d.items;
+    renderProviderList();
+    fillGenProviders();
+  } catch (err) {
+    setText($("pvMsg"), err.message);
+  }
+}
+
+// 生成话术那个下拉：默认走服务器配置，其余是管理员登记的渠道
+function fillGenProviders() {
+  const sel = $("genProvider");
+  if (!sel) return;
+  const keep = sel.value;
+  sel.innerHTML = "";
+  const def = document.createElement("option");
+  def.value = "";
+  def.textContent = "服务器默认";
+  sel.appendChild(def);
+  for (const p of PROVIDERS.filter((x) => x.is_active)) {
+    const o = document.createElement("option");
+    o.value = p.id;
+    o.textContent = p.name;
+    sel.appendChild(o);
+  }
+  if (keep) sel.value = keep;
+}
+
+function renderProviderList() {
+  const ul = $("pvList");
+  if (!ul) return;
+  ul.innerHTML = "";
+  setText($("pvCount"), "共 " + PROVIDERS.length + " 个");
+  if (!PROVIDERS.length) {
+    const li = document.createElement("li");
+    li.className = "hint";
+    li.textContent = IS_ADMIN
+      ? "还没有渠道，上面加一个。"
+      : "管理员还没配渠道，生成时走服务器默认那套。";
+    ul.appendChild(li);
+    return;
+  }
+  for (const p of PROVIDERS) {
+    const li = document.createElement("li");
+    li.className = "cust-item";
+    const st = p.has_key ? "已配 key" : "⚠ 未配 key";
+    li.innerHTML =
+      '<div class="cust-row"><div class="cust-main">' +
+      '<div class="cust-name">' + escapeHtml(p.name) + "</div>" +
+      '<div class="cust-meta"><span>' + escapeHtml(p.model) + "</span>" +
+      "<span>" + escapeHtml(p.base_url) + "</span><span>" + st + "</span></div></div>" +
+      '<div class="cust-side"><span class="contact' + (p.is_active ? "" : " warn") + '">' +
+      (p.is_active ? "启用中" : "已停用") + "</span></div></div>";
+
+    if (IS_ADMIN) {
+      const actions = document.createElement("span");
+      actions.className = "prod-actions";
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "ghost fu-btn";
+      edit.textContent = "编辑";
+      edit.addEventListener("click", () => startEditProvider(p));
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "ghost danger fu-btn";
+      del.textContent = "删";
+      del.addEventListener("click", () => deleteProvider(p));
+      actions.append(edit, del);
+      li.querySelector(".cust-meta").appendChild(actions);
+    }
+    ul.appendChild(li);
+  }
+}
+
+function startEditProvider(p) {
+  PROV_EDIT_ID = p.id;
+  $("pvFormTitle").textContent = "编辑智能体：" + p.name;
+  $("pvName").value = p.name;
+  $("pvBase").value = p.base_url;
+  $("pvModel").value = p.model;
+  $("pvKey").value = "";
+  $("pvKey").placeholder = p.has_key ? "留空 = 不改 key" : "这个渠道还没配 key";
+  $("cancelProvider").hidden = false;
+  $("saveProvider").textContent = "保存修改";
+  $("pvName").focus();
+}
+
+function cancelProviderEdit() {
+  PROV_EDIT_ID = null;
+  $("pvFormTitle").textContent = "添加智能体";
+  $("pvName").value = "";
+  $("pvBase").value = "";
+  $("pvModel").value = "";
+  $("pvKey").value = "";
+  $("pvKey").placeholder = "API Key（加密保存，保存后不回显）";
+  $("cancelProvider").hidden = true;
+  $("saveProvider").textContent = "保存";
+}
+
+async function saveProvider() {
+  const payload = {
+    name: $("pvName").value.trim(),
+    base_url: $("pvBase").value.trim(),
+    model: $("pvModel").value.trim(),
+  };
+  const key = $("pvKey").value.trim();
+  if (!payload.name || !payload.base_url || !payload.model) {
+    return setText($("pvMsg"), "名称、接口地址、模型名都要填");
+  }
+  try {
+    if (PROV_EDIT_ID) {
+      if (key) payload.api_key = key; // 留空就不动原来的 key
+      await api("/api/providers/" + PROV_EDIT_ID, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      setText($("pvMsg"), "已保存修改。");
+    } else {
+      payload.api_key = key;
+      await api("/api/providers", { method: "POST", body: JSON.stringify(payload) });
+      setText($("pvMsg"), "已添加：" + payload.name);
+    }
+    cancelProviderEdit();
+    await loadProviders();
+  } catch (err) {
+    setText($("pvMsg"), err.message);
+  }
+}
+
+async function deleteProvider(p) {
+  if (!confirm("删掉渠道「" + p.name + "」？之后生成就不能选它了。")) return;
+  try {
+    await api("/api/providers/" + p.id, { method: "DELETE" });
+    setText($("pvMsg"), "已删除：" + p.name);
+    await loadProviders();
+  } catch (err) {
+    setText($("pvMsg"), err.message);
+  }
+}
+
+async function loadLimits() {
+  if (!IS_ADMIN) return;
+  try {
+    const d = await api("/api/limits");
+    const ul = $("limitList");
+    ul.innerHTML = "";
+    for (const r of d.items) {
+      const li = document.createElement("li");
+      li.className = "cust-item";
+      li.innerHTML =
+        '<div class="cust-row"><div class="cust-main">' +
+        '<div class="cust-name">' + escapeHtml(r.display_name || r.username) + "</div>" +
+        '<div class="cust-meta"><span>本月调用 ' + r.calls + " 次</span>" +
+        "<span>已用 " + r.used_tokens + " tokens</span></div></div></div>";
+      const row = document.createElement("div");
+      row.className = "newrow";
+      row.style.marginTop = "8px";
+      const input = document.createElement("input");
+      input.type = "number";
+      input.min = "0";
+      input.value = r.monthly_tokens;
+      input.placeholder = "月度 token 额度（0 = 不限）";
+      const save = document.createElement("button");
+      save.type = "button";
+      save.className = "ghost";
+      save.textContent = "保存额度";
+      save.addEventListener("click", () => saveLimit(r.user_id, input.value));
+      row.append(input, save);
+      li.appendChild(row);
+      ul.appendChild(li);
+    }
+  } catch (err) {
+    setText($("limitMsg"), err.message);
+  }
+}
+
+async function saveLimit(userId, value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return setText($("limitMsg"), "额度要填 0 或正数");
+  try {
+    await api("/api/limits/" + userId, {
+      method: "PUT",
+      body: JSON.stringify({ monthly_tokens: n }),
+    });
+    setText($("limitMsg"), "已保存。");
+    await loadLimits();
+  } catch (err) {
+    setText($("limitMsg"), err.message);
+  }
+}
+
+async function loadAiView() {
+  $("aiAdminCard").hidden = !IS_ADMIN;
+  $("limitCard").hidden = !IS_ADMIN;
+  await loadProviders();
+  if (IS_ADMIN) await loadLimits();
+}
+
 // ---------- 入口 ----------
 
 // 搜索：敲字后停 250ms 再查，免得每按一个键都打一次接口
@@ -1558,6 +1772,10 @@ function bind() {
   // 生成话术
   $("doGenerate").addEventListener("click", doGenerate);
   $("copyGen").addEventListener("click", copyGen);
+
+  // 智能体
+  $("saveProvider").addEventListener("click", saveProvider);
+  $("cancelProvider").addEventListener("click", cancelProviderEdit);
 
   // 产品自定义属性
   $("addAttr").addEventListener("click", () => addAttrRow());
