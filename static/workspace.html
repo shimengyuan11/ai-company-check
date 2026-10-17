@@ -74,15 +74,21 @@
         <!-- 右侧详情栏：一直在这儿，不占中间 -->
         <aside class="pane-detail">
           <section class="card">
-            <p id="detailEmpty" class="hint">← 左边点一个客户</p>
+            <div id="detailEmpty" class="empty-state">
+              <div class="empty-icon"></div>
+              <div>左边点一个客户，<br>这里会显示他的来龙去脉</div>
+            </div>
             <div id="detail" hidden>
               <div class="detail-head">
-                <div class="head-row">
+                <div class="detail-top">
+                  <div id="dAvatar" class="avatar"></div>
+                  <div class="head-row" style="flex:1 1 auto">
                   <h2 id="dTitle"></h2>
                   <div class="head-actions">
                     <button id="editCustomer" class="ghost">编辑资料</button>
                     <button id="toggleHot" class="ghost">标记高意向</button>
                     <button id="deleteCustomer" class="ghost danger">删除</button>
+                  </div>
                   </div>
                 </div>
                 <p id="dMeta" class="hint"></p>

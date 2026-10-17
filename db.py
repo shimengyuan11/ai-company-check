@@ -555,10 +555,21 @@ def list_customers(owner_id, is_admin=False, q="", stage="", sort="recent", idle
 
 
 def get_customer(customer_id, viewer_id, is_admin=False):
-    """取一个客户。**权限过滤就在这条 SQL 里**——看不到就返回 None，和「不存在」同等待遇。"""
+    """取一个客户。**权限过滤就在这条 SQL 里**——看不到就返回 None，和「不存在」同等待遇。
+
+    顺手带上跟进条数和最后跟进时间：详情页的「未联系天数」要用它。
+    少了 last_followup_at，详情会误判成「还没写过跟进」——这个坑踩过（2026-10-17）。
+    """
     with pool.connection() as conn:
         return conn.execute(
-            "SELECT * FROM customers WHERE id = %s AND (%s OR owner_id = %s)",
+            """
+            SELECT c.*,
+                   (SELECT count(*) FROM followups f WHERE f.customer_id = c.id) AS followup_count,
+                   (SELECT max(f.created_at) FROM followups f WHERE f.customer_id = c.id)
+                       AS last_followup_at
+            FROM customers c
+            WHERE c.id = %s AND (%s OR c.owner_id = %s)
+            """,
             (customer_id, is_admin, viewer_id),
         ).fetchone()
 

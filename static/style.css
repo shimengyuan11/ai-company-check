@@ -571,3 +571,138 @@ textarea::placeholder { color: var(--text-3); }
 #pvKey { font-family: inherit; }
 #limitList .cust-item { cursor: default; }
 #limitList input { max-width: 220px; margin-bottom: 0; }
+
+/* ============================================================
+   视觉升级（2026-10-17）：解决"登录页一片白"和"工作台太单薄"
+   原则：只加层次，不制造干扰。所有颜色仍走 :root 变量。
+   ============================================================ */
+
+/* 1. 工作台底色：两团极淡光晕 + 纵向渐变，空间有纵深 */
+body {
+  background:
+    radial-gradient(1100px 520px at 8% -8%, rgba(37, 99, 235, .07), transparent 62%),
+    radial-gradient(900px 460px at 100% 0%, rgba(5, 150, 105, .05), transparent 58%),
+    linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+}
+/* 内容区铺一层几乎看不见的网格，卡片才"浮"得起来 */
+.content {
+  background-image:
+    linear-gradient(rgba(15, 23, 42, .022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, .022) 1px, transparent 1px);
+  background-size: 34px 34px;
+}
+
+/* 2. 卡片：悬停轻浮，别太抢 */
+.card { transition: box-shadow .18s ease, border-color .18s ease; }
+.card:hover { box-shadow: var(--sh-2); }
+
+/* 3. 统计卡：数字渐变 + 悬停上浮 */
+.stat { transition: transform .18s ease, box-shadow .18s ease; }
+.stat:hover { transform: translateY(-2px); box-shadow: var(--sh-2); }
+.stat.brand .stat-num {
+  background: linear-gradient(135deg, #2563eb, #38bdf8);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.stat.warn .stat-num {
+  background: linear-gradient(135deg, #d97706, #f59e0b);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.stat.ok .stat-num {
+  background: linear-gradient(135deg, #059669, #34d399);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+
+/* 4. 客户卡片：左侧阶段色条（一眼看出进度），悬停轻推 */
+.cust-item { border-left: 3px solid var(--border); transition: transform .15s ease, border-color .15s ease, background .15s ease; }
+.cust-item:hover { transform: translateX(2px); }
+.cust-item.st-new { border-left-color: var(--primary); }
+.cust-item.st-contacted { border-left-color: #6366f1; }
+.cust-item.st-following { border-left-color: #0891b2; }
+.cust-item.st-quoted { border-left-color: var(--warn); }
+.cust-item.st-won { border-left-color: var(--ok); }
+.cust-item.st-lost { border-left-color: var(--border-strong); }
+
+/* 5. 详情栏：客户首字母头像 + 阶段色 */
+.detail-top { display: flex; align-items: center; gap: var(--sp-3); }
+.avatar {
+  width: 44px; height: 44px; flex: 0 0 auto;
+  border-radius: 50%; display: grid; place-items: center;
+  font-size: 17px; font-weight: 700; color: #fff;
+  background: linear-gradient(135deg, #3b82f6, #6366f1);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, .28);
+}
+.avatar.st-contacted { background: linear-gradient(135deg, #6366f1, #818cf8); }
+.avatar.st-following { background: linear-gradient(135deg, #0891b2, #22d3ee); }
+.avatar.st-quoted { background: linear-gradient(135deg, #d97706, #fbbf24); box-shadow: 0 4px 12px rgba(217, 119, 6, .28); }
+.avatar.st-won { background: linear-gradient(135deg, #059669, #34d399); box-shadow: 0 4px 12px rgba(5, 150, 105, .28); }
+.avatar.st-lost { background: linear-gradient(135deg, #64748b, #94a3b8); box-shadow: none; }
+
+/* 6. 空状态：给个图形，别只留一行灰字 */
+.empty-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: var(--sp-2); padding: var(--sp-6) var(--sp-4); color: var(--text-3);
+  font-size: var(--fs-2); text-align: center;
+}
+.empty-state .empty-icon {
+  width: 54px; height: 54px; border-radius: 16px; position: relative;
+  background: linear-gradient(135deg, #e0e7ff, #dbeafe);
+}
+.empty-state .empty-icon::after {
+  content: ""; position: absolute; inset: 14px;
+  border: 2px dashed #93c5fd; border-radius: 9px;
+}
+
+/* 7. 左导航：悬停位移 + 分组标题 */
+.nav-item { transition: background .15s ease, color .15s ease, transform .15s ease; }
+.nav-item:hover { transform: translateX(2px); }
+.nav-group {
+  margin: var(--sp-3) 0 2px; padding-left: 10px;
+  font-size: 11px; letter-spacing: .08em; color: rgba(255, 255, 255, .28);
+}
+
+/* ============ 登录页：整页深色，卡片毛玻璃（消除大片留白） ============ */
+.auth-page { background: #0a1120; }
+.auth-shell {
+  background:
+    radial-gradient(900px 520px at 6% -6%, rgba(59, 130, 246, .26), transparent 62%),
+    radial-gradient(760px 520px at 102% 104%, rgba(16, 185, 129, .18), transparent 58%),
+    linear-gradient(160deg, #0b1220 0%, #0f172a 46%, #0a1120 100%);
+}
+.auth-side, .auth-main { background: transparent; }
+.auth-card {
+  background: rgba(255, 255, 255, .055);
+  border: 1px solid rgba(255, 255, 255, .13);
+  -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
+  box-shadow: 0 24px 64px rgba(2, 6, 23, .58), inset 0 1px 0 rgba(255, 255, 255, .08);
+  color: #e2e8f0;
+}
+.auth-card h1 { color: #fff; }
+.auth-card #authSub, .auth-card > .hint { color: rgba(226, 232, 240, .55); }
+.auth-card .field-label { color: rgba(226, 232, 240, .72); }
+.auth-card input {
+  background: rgba(255, 255, 255, .06);
+  border-color: rgba(255, 255, 255, .16);
+  color: #f1f5f9;
+}
+.auth-card input::placeholder { color: rgba(226, 232, 240, .34); }
+.auth-card input:focus { border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(59, 130, 246, .22); }
+.auth-card button[type="submit"] {
+  background: linear-gradient(135deg, #2563eb, #3b82f6);
+  box-shadow: 0 8px 22px rgba(37, 99, 235, .35);
+}
+.auth-card .status { color: #93c5fd; }
+.auth-switch a { color: #93c5fd; }
+.auth-points li { border-left-color: rgba(255, 255, 255, .22); }
+
+/* 尊重系统"减少动效"设置 */
+@media (prefers-reduced-motion: reduce) {
+  .card, .stat, .cust-item, .nav-item { transition: none !important; }
+  .stat:hover, .cust-item:hover, .nav-item:hover { transform: none !important; }
+}
+
+/* 详情栏头部：头像 + 标题 + 操作按钮，防止标题被挤成竖排 */
+.detail-top { align-items: flex-start; }
+.detail-top .head-row { flex: 1 1 auto; min-width: 0; align-items: center; }
+.detail-top #dTitle { flex: 1 1 auto; min-width: 0; word-break: break-word; }
+.detail-top .head-actions { flex-wrap: wrap; justify-content: flex-end; }
+.head-actions button { min-height: 30px; padding: 4px 10px; font-size: var(--fs-2); }

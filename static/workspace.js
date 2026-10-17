@@ -21,6 +21,7 @@ let STAGES = []; // 后端给的固定档位，避免前后端各写一份
 const STAGE_CLASS = {
   新线索: "new",
   已联系: "contacted",
+  跟进中: "following",
   已报价: "quoted",
   成交: "won",
   流失: "lost",
@@ -221,7 +222,10 @@ async function loadCustomers() {
     }
     for (const c of data.items) {
       const li = document.createElement("li");
-      li.className = "cust-item" + (c.id === CURRENT ? " active" : "");
+      li.className =
+        "cust-item" +
+        (c.stage && STAGE_CLASS[c.stage] ? " st-" + STAGE_CLASS[c.stage] : "") +
+        (c.id === CURRENT ? " active" : "");
       li.dataset.id = c.id;
       const tags = [];
       if (c.stage) {
@@ -296,6 +300,12 @@ async function openCustomer(id) {
     $("dEdit").hidden = true;
     $("dMeta").hidden = false;
     setText($("dTitle"), titleOf(c));
+    // 首字母头像 + 阶段色，给右侧详情一个视觉焦点
+    const avatar = $("dAvatar");
+    if (avatar) {
+      avatar.textContent = (titleOf(c) || "?").trim().charAt(0).toUpperCase();
+      avatar.className = "avatar" + (c.stage && STAGE_CLASS[c.stage] ? " st-" + STAGE_CLASS[c.stage] : "");
+    }
     const bits = [];
     if (c.company) bits.push("公司：" + c.company);
     if (c.phone) bits.push("号码：" + c.phone);

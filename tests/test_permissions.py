@@ -64,6 +64,22 @@ class PermissionTest(unittest.TestCase):
 
         self.assertEqual(self.b_c.get(f"/api/customers/{c['id']}").status_code, 404)
 
+    def test_customer_detail_carries_followup_time(self):
+        """详情也要带 last_followup_at / followup_count。
+
+        少了它，详情页会把「有跟进」的客户误判成「还没写过跟进」，
+        未联系天数就按建档时间算，显示出来是错的（2026-10-17 截图里发现的）。
+        """
+        c = _create(self.a_c, "详情字段客户")
+        d = self.a_c.get(f"/api/customers/{c['id']}").json()
+        self.assertEqual(d["followup_count"], 0)
+        self.assertIsNone(d["last_followup_at"])
+
+        self.a_c.post(f"/api/customers/{c['id']}/followups", json={"content": "第一次沟通"})
+        d2 = self.a_c.get(f"/api/customers/{c['id']}").json()
+        self.assertEqual(d2["followup_count"], 1)
+        self.assertIsNotNone(d2["last_followup_at"], "写过跟进就要有最后跟进时间")
+
     def test_other_user_cannot_modify_or_delete(self):
         c = _create(self.a_c, "李四")
         cid = c["id"]
