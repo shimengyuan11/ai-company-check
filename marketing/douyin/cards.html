@@ -76,6 +76,34 @@
     font-size: 26px; padding: 12px 22px; border-radius: 999px;
     border: 1px solid rgba(120, 160, 220, .28); color: #a9bfd8; background: rgba(255, 255, 255, .03);
   }
+  /* ────────────────────────────────────────────────────────────
+     竖向 1080×1920（视频用）
+     抖音全屏视频上下各压着一层平台 UI：顶部标题/关注、底部文案/按钮。
+     所以关键内容必须避开：上 236px、下 372px 之内不放正文。
+     这一版的字号比 3:4 图文版更大，因为竖屏观看距离更远。
+     ──────────────────────────────────────────────────────────── */
+  html.vertical body { width: 1080px; height: 1920px; }
+  .vertical .card { width: 1080px; height: 1920px; padding: 236px 96px 372px; }
+  .vertical .top { margin-bottom: 52px; }
+  .vertical .brand { font-size: 27px; }
+  .vertical .idx { font-size: 25px; }
+  .vertical h1 { font-size: 92px; line-height: 1.16; }
+  .vertical .lead { font-size: 37px; margin-top: 28px; line-height: 1.58; }
+  .vertical ul { margin-top: 46px; gap: 28px; }
+  .vertical li { font-size: 38px; gap: 20px; line-height: 1.48; }
+  .vertical li .dot { margin-top: 17px; }
+  .vertical li .sub { font-size: 29px; margin-top: 8px; line-height: 1.5; }
+  .vertical .quote { font-size: 32px; padding: 30px 34px; margin-top: 38px; line-height: 1.58; }
+  .vertical .code { font-size: 27px; padding: 20px 24px; }
+  .vertical .foot { padding-top: 30px; font-size: 25px; }
+  .vertical .chip { font-size: 27px; padding: 11px 20px; }
+  .vertical .cols { margin-top: 34px; gap: 16px; }
+  .vertical .cover h1 { font-size: 100px; }
+  .vertical .cover .badge { margin-bottom: 42px; font-size: 27px; }
+  .vertical .cover .lead { font-size: 36px; }
+  .vertical .cover .metrics { gap: 46px; padding-bottom: 16px; }
+  .vertical .cover .m b { font-size: 58px; }
+  .vertical .cover .m span { font-size: 25px; }
 </style>
 </head>
 <body>
@@ -206,7 +234,10 @@
 </section>
 
 <script>
-  const i = new URLSearchParams(location.search).get('i') || '1';
+  const q = new URLSearchParams(location.search);
+  const i = q.get('i') || '1';
+  /* ?v=v 切到 1080×1920 视频版（截图时窗口也要给 1080×1920） */
+  if (q.get('v') === 'v') document.documentElement.classList.add('vertical');
   document.querySelectorAll('.card').forEach((el) => {
     el.classList.toggle('on', el.dataset.i === i);
   });

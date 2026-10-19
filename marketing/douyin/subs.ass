@@ -1,0 +1,23 @@
+[Script Info]
+Title: Meridian 抖音演示
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Main,Microsoft YaHei,52,&H00FFFFFF,&H000000FF,&H00101828,&H7F000000,1,0,0,0,100,100,1.2,0,1,4,0,2,90,90,430,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.12,0:00:02.42,Main,,0,0,0,,跨行一年，我给自己做了个外贸客户系统
+Dialogue: 0,0:00:02.37,0:00:04.67,Main,,0,0,0,,客户资料散在四处，人一走，聊到哪步全断
+Dialogue: 0,0:00:04.62,0:00:06.92,Main,,0,0,0,,第一个功能是背调：输入公司名出一份报告
+Dialogue: 0,0:00:06.87,0:00:09.17,Main,,0,0,0,,但规矩是：不知道就说不知道，不许编数字
+Dialogue: 0,0:00:09.12,0:00:11.42,Main,,0,0,0,,第二个是真在用的工作台：建档三个字段
+Dialogue: 0,0:00:11.37,0:00:13.67,Main,,0,0,0,,谁多久没联系，一眼看得出来
+Dialogue: 0,0:00:13.62,0:00:15.92,Main,,0,0,0,,话术生成会把最近三条跟进一起读进去
+Dialogue: 0,0:00:15.87,0:00:18.17,Main,,0,0,0,,多家公司共用一个系统，也互相看不到数据
+Dialogue: 0,0:00:18.12,0:00:20.42,Main,,0,0,0,,代码在 GitHub，仓库名放评论区，欢迎来改
