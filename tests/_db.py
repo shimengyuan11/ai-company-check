@@ -60,11 +60,11 @@ def client():
     return TestClient(app)
 
 
-def register(c, prefix):
+def register(c, prefix, code="testcode"):
     username = f"{prefix}_{uuid.uuid4().hex[:6]}"
     r = c.post(
         "/api/register",
-        json={"username": username, "password": "pw123456", "code": "testcode"},
+        json={"username": username, "password": "pw123456", "code": code},
     )
     assert r.status_code == 200, r.text
     return r.json()["user"]

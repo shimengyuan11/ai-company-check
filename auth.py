@@ -31,18 +31,18 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 
 def registration_allowed(code: str):
-    """能不能注册。返回 (是否允许, 是否成为管理员)。
+    """能不能注册。返回 (是否允许, 是否成为管理员, 组织 id)。
 
-    **一律要求邀请码**——哪怕库里一个用户都没有。
-    为什么不能「第一个注册的人免邀请码」：这个站是公开的，
-    在真实用户注册之前，万一有陌生人先注册，他就成了管理员——
-    能看到所有人的客户、还把真实主人锁在外面。宁可多配一个环境变量。
+    邀请码现在对应「组织」：一个码 = 一个团队。第一个用某个码注册的人，
+    成为**那个组织**的管理员——他看不到别的组织的客户（多公司共用一个实例时的边界）。
+    没配 SIGNUP_CODE 时仍然一律拒绝（fail-closed）。
     """
     if not SIGNUP_CODE:
-        return False, False  # 没配邀请码 → 一律拒绝（fail-closed，宁可拒绝也不放人进来）
-    if code != SIGNUP_CODE:
-        return False, False
-    return True, db.count_users() == 0  # 第一个用邀请码注册的人成为管理员
+        return False, False, None
+    org = db.get_org_by_code(code or "")
+    if org is None:
+        return False, False, None
+    return True, db.count_users_in_org(org["id"]) == 0, org["id"]
 
 
 def current_user(request: Request):

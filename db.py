@@ -92,6 +92,33 @@ def init_db():
             )
             """
         )
+
+        # —— 组织（租户）——
+        # 为什么要这一层：管理员原本能看到库里所有人的客户，那是给"一家公司内部离职转接"用的。
+        # 但同一个实例如果给两家公司共用，管理员就能看光对方的客户名单——没人愿意这么用。
+        # 现在客户带 org_id，管理员的可见范围收窄到自己组织；默认只有一个组织，
+        # 邀请码沿用 SIGNUP_CODE，所以单团队部署的手感完全不变。
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS orgs (
+                id         SERIAL PRIMARY KEY,
+                name       TEXT NOT NULL,
+                code       TEXT UNIQUE NOT NULL,
+                created_at TEXT
+            )
+            """
+        )
+        conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS org_id INTEGER DEFAULT 1")
+        conn.execute(
+            "INSERT INTO orgs (name, code, created_at) "
+            "SELECT '默认团队', %s, %s WHERE NOT EXISTS (SELECT 1 FROM orgs)",
+            (os.environ.get("SIGNUP_CODE", ""), _now()),
+        )
+        # 环境变量改了要跟着走：默认组织的邀请码始终等于当前的 SIGNUP_CODE
+        conn.execute(
+            "UPDATE orgs SET code = %s WHERE id = (SELECT min(id) FROM orgs)",
+            (os.environ.get("SIGNUP_CODE", ""),),
+        )
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS customers (
@@ -106,11 +133,25 @@ def init_db():
                 note         TEXT,
                 stage        TEXT,
                 high_intent  BOOLEAN NOT NULL DEFAULT FALSE,
+                org_id       INTEGER DEFAULT 1,
                 created_at   TEXT,
                 updated_at   TEXT
             )
             """
         )
+        # 组织归属（多公司共用一个实例时的数据边界）：
+        # 老库没有这一列，补上并把存量数据按 owner 所属组织回填。
+        conn.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS org_id INTEGER DEFAULT 1")
+        conn.execute("ALTER TABLE analyses ADD COLUMN IF NOT EXISTS org_id INTEGER DEFAULT 1")
+        conn.execute(
+            "UPDATE customers c SET org_id = COALESCE(u.org_id, 1) "
+            "FROM users u WHERE u.id = c.owner_id AND c.org_id IS NULL"
+        )
+        conn.execute(
+            "UPDATE analyses a SET org_id = COALESCE(u.org_id, 1) "
+            "FROM users u WHERE u.id = a.user_id AND a.org_id IS NULL"
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_customers_org ON customers(org_id)")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS followups (
@@ -343,27 +384,27 @@ def init_db():
 # ===================== V1：背调 =====================
 
 
-def save_analysis(company, extra, analysis, model, user_id=None):
+def save_analysis(company, extra, analysis, model, user_id=None, org_id=1):
     """存一条背调，返回它的 id。
 
-    user_id 是归属人——背调历史按人隔离（老的 NULL 行只有管理员看得到）。
+    user_id 是归属人、org_id 是归属组织——背调历史按人隔离（老的无主行只有本组织管理员看得到）。
     """
     with pool.connection() as conn:
         row = conn.execute(
-            "INSERT INTO analyses (company, extra, analysis, model, user_id, created_at)"
-            " VALUES (%s, %s, %s, %s, %s, %s)"
+            "INSERT INTO analyses (company, extra, analysis, model, user_id, org_id, created_at)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s)"
             " RETURNING id",
-            (company, extra, analysis, model, user_id, _now()),
+            (company, extra, analysis, model, user_id, org_id, _now()),
         ).fetchone()
     return row["id"]
 
 
-def list_history(limit=10, user_id=None, is_admin=False):
-    """读最近 limit 条（不含正文，列表页用不上）。管理员能看到全部。"""
-    sql = "SELECT id, company, created_at FROM analyses"
-    params = []
+def list_history(limit=10, user_id=None, is_admin=False, org_id=1):
+    """读最近 limit 条（不含正文，列表页用不上）。管理员能看到本组织全部。"""
+    sql = "SELECT id, company, created_at FROM analyses WHERE org_id = %s"
+    params = [org_id]
     if user_id is not None and not is_admin:
-        sql += " WHERE user_id = %s"
+        sql += " AND user_id = %s"
         params.append(user_id)
     sql += " ORDER BY id DESC LIMIT %s"
     params.append(limit)
@@ -372,10 +413,10 @@ def list_history(limit=10, user_id=None, is_admin=False):
     return rows
 
 
-def get_analysis(record_id, user_id=None, is_admin=False):
-    """读某一条的完整内容。不是本人（也不是管理员）就当它不存在。"""
-    sql = "SELECT * FROM analyses WHERE id = %s"
-    params = [record_id]
+def get_analysis(record_id, user_id=None, is_admin=False, org_id=1):
+    """读某一条的完整内容。不是本人（也不是本组织管理员）就当它不存在。"""
+    sql = "SELECT * FROM analyses WHERE id = %s AND org_id = %s"
+    params = [record_id, org_id]
     if user_id is not None and not is_admin:
         sql += " AND user_id = %s"
         params.append(user_id)
@@ -392,12 +433,26 @@ def count_users():
         return conn.execute("SELECT count(*) AS n FROM users").fetchone()["n"]
 
 
-def create_user(username, password_hash, display_name="", is_admin=False):
+def get_org_by_code(code):
+    """按邀请码找组织。None = 这个码不属于任何组织。"""
+    with pool.connection() as conn:
+        return conn.execute("SELECT * FROM orgs WHERE code = %s", (code,)).fetchone()
+
+
+def count_users_in_org(org_id):
+    """某个组织里有几个人——用来判断「第一个注册的人当管理员」。"""
+    with pool.connection() as conn:
+        return conn.execute(
+            "SELECT count(*) AS n FROM users WHERE org_id = %s", (org_id,)
+        ).fetchone()["n"]
+
+
+def create_user(username, password_hash, display_name="", is_admin=False, org_id=1):
     with pool.connection() as conn:
         row = conn.execute(
-            "INSERT INTO users (username, password_hash, display_name, is_admin, created_at)"
-            " VALUES (%s, %s, %s, %s, %s) RETURNING id",
-            (username, password_hash, display_name or username, is_admin, _now()),
+            "INSERT INTO users (username, password_hash, display_name, is_admin, org_id, created_at)"
+            " VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+            (username, password_hash, display_name or username, is_admin, org_id, _now()),
         ).fetchone()
     return row["id"]
 
@@ -414,11 +469,16 @@ def get_user(user_id):
         return conn.execute("SELECT * FROM users WHERE id = %s", (user_id,)).fetchone()
 
 
-def list_users():
-    """给「移交客户」的下拉用——只取 id 和名字，绝不把 password_hash 带出去。"""
+def list_users(org_id=1):
+    """给「移交客户」的下拉用——只取 id 和名字，绝不把 password_hash 带出去。
+
+    只列本组织的人：跨组织的同事不该出现在移交下拉里（多公司共用一个实例时这是边界）。
+    """
     with pool.connection() as conn:
         return conn.execute(
-            "SELECT id, username, display_name, is_active FROM users ORDER BY id"
+            "SELECT id, username, display_name, is_active FROM users"
+            " WHERE org_id = %s ORDER BY id",
+            (org_id,),
         ).fetchall()
 
 
@@ -460,17 +520,18 @@ def phone_taken(phone_norm):
     return row is not None
 
 
-def create_customer(owner_id, contact_name, phone, country, company="", source="", note=""):
+def create_customer(owner_id, contact_name, phone, country, company="", source="", note="", org_id=1):
     """建档。姓名 / 号码 / 国家 必填（由接口层强制），公司名选填。
 
     顺手把这次填的 国家 / 来源 记进选项库——下次（谁）建档就能直接下拉选。
+    org_id 决定这条客户归哪个组织：跨组织的客户，连本组织管理员都看不到。
     """
     with pool.connection() as conn:
         row = conn.execute(
             "INSERT INTO customers"
             " (owner_id, contact_name, phone, phone_norm, country, company, source, note,"
-            "  created_at, updated_at)"
-            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            "  org_id, created_at, updated_at)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
             (
                 owner_id,
                 contact_name,
@@ -480,6 +541,7 @@ def create_customer(owner_id, contact_name, phone, country, company="", source="
                 company,
                 source,
                 note,
+                org_id,
                 _now(),
                 _now(),
             ),
@@ -504,7 +566,7 @@ def list_options(kind):
     return [r["value"] for r in rows]
 
 
-def list_customers(owner_id, is_admin=False, q="", stage="", sort="recent", idle_days=0):
+def list_customers(owner_id, is_admin=False, q="", stage="", sort="recent", idle_days=0, org_id=1):
     """客户列表。普通人只看自己的；管理员看全部。
 
     每条带上「有多少条跟进」和「最后一次跟进是什么时候」——列表页一眼能看出谁很久没跟了。
@@ -518,15 +580,16 @@ def list_customers(owner_id, is_admin=False, q="", stage="", sort="recent", idle
     """
     q = (q or "").strip()
     stage = (stage or "").strip()
-    params = [is_admin, owner_id]
+    params = [org_id, is_admin, owner_id]
     # 括号不能省：OR 的优先级低于 AND，不加括号时管理员会绕过下面的 stage / 搜索条件
+    # org_id 在最外层：跨组织的客户，管理员也看不到（多公司共用一个实例时的数据边界）
     sql = """
         SELECT c.*,
                (SELECT count(*) FROM followups f WHERE f.customer_id = c.id) AS followup_count,
                (SELECT max(f.created_at) FROM followups f WHERE f.customer_id = c.id)
                    AS last_followup_at
         FROM customers c
-        WHERE (%s OR c.owner_id = %s)
+        WHERE c.org_id = %s AND (%s OR c.owner_id = %s)
     """
     if q:
         like = f"%{q}%"
@@ -571,7 +634,7 @@ def list_customers(owner_id, is_admin=False, q="", stage="", sort="recent", idle
     return rows
 
 
-def get_customer(customer_id, viewer_id, is_admin=False):
+def get_customer(customer_id, viewer_id, is_admin=False, org_id=1):
     """取一个客户。**权限过滤就在这条 SQL 里**——看不到就返回 None，和「不存在」同等待遇。
 
     顺手带上跟进条数和最后跟进时间：详情页的「未联系天数」要用它。
@@ -585,9 +648,9 @@ def get_customer(customer_id, viewer_id, is_admin=False):
                    (SELECT max(f.created_at) FROM followups f WHERE f.customer_id = c.id)
                        AS last_followup_at
             FROM customers c
-            WHERE c.id = %s AND (%s OR c.owner_id = %s)
+            WHERE c.id = %s AND c.org_id = %s AND (%s OR c.owner_id = %s)
             """,
-            (customer_id, is_admin, viewer_id),
+            (customer_id, org_id, is_admin, viewer_id),
         ).fetchone()
 
 

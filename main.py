@@ -92,7 +92,7 @@ def analyze(req: AnalyzeRequest, request: Request):
             "error": f"调用 LLM 失败：HTTP {e.response.status_code}",
             "detail": e.response.text[:300],
         }
-    record_id = save_analysis(req.company, req.extra, text, provider["model"], user["id"])
+    record_id = save_analysis(req.company, req.extra, text, provider["model"], user["id"], user.get("org_id", 1))
     return {"id": record_id, "company": req.company, "analysis": text}
 
 
@@ -100,14 +100,14 @@ def analyze(req: AnalyzeRequest, request: Request):
 def history(request: Request, limit: int = 10):
     """只列自己的背调记录；管理员可以看全部。"""
     user = auth.require_user(request)
-    return {"items": list_history(limit, user["id"], user["is_admin"])}
+    return {"items": list_history(limit, user["id"], user["is_admin"], user.get("org_id", 1))}
 
 
 @app.get("/history/{record_id}")
 def history_detail(record_id: int, request: Request):
     """只看自己那条；管理员可以看全部。"""
     user = auth.require_user(request)
-    row = get_analysis(record_id, user["id"], user["is_admin"])
+    row = get_analysis(record_id, user["id"], user["is_admin"], user.get("org_id", 1))
     if row is None:
         return {"error": f"没有 id={record_id} 的记录"}
     return row
@@ -131,7 +131,7 @@ class LoginRequest(BaseModel):
 
 @app.post("/api/register")
 def api_register(req: RegisterRequest, request: Request):
-    allowed, as_admin = auth.registration_allowed(req.code)
+    allowed, as_admin, org_id = auth.registration_allowed(req.code)
     if not allowed:
         raise HTTPException(status_code=403, detail="注册已关闭（需要邀请码）")
     username = req.username.strip()
@@ -141,7 +141,7 @@ def api_register(req: RegisterRequest, request: Request):
         raise HTTPException(status_code=400, detail="密码至少 6 位")
     if db.get_user_by_username(username) is not None:
         raise HTTPException(status_code=400, detail="用户名已被占用")
-    uid = db.create_user(username, auth.hash_password(req.password), username, as_admin)
+    uid = db.create_user(username, auth.hash_password(req.password), username, as_admin, org_id)
     request.session["user_id"] = uid
     return {"user": auth.public_user(db.get_user(uid))}
 
@@ -228,7 +228,7 @@ def _visible_customer(customer_id: int, user):
 
     权限判断本身在 db.get_customer 的 SQL 里，这里只是把「没权限」翻译成 404。
     """
-    c = db.get_customer(customer_id, user["id"], user["is_admin"])
+    c = db.get_customer(customer_id, user["id"], user["is_admin"], user.get("org_id", 1))
     if c is None:
         raise HTTPException(status_code=404, detail="客户不存在")
     return c
@@ -236,9 +236,12 @@ def _visible_customer(customer_id: int, user):
 
 @app.get("/api/users")
 def api_users(request: Request):
-    """给「移交客户」的下拉用。只返回 id / 名字，不含任何密码字段。"""
-    auth.require_user(request)
-    return {"items": db.list_users()}
+    """给「移交客户」的下拉用。只返回 id / 名字，不含任何密码字段。
+
+    只列本组织的人——别公司的同事不该出现在移交下拉里。
+    """
+    user = auth.require_user(request)
+    return {"items": db.list_users(user.get("org_id", 1))}
 
 
 @app.get("/api/customers")
@@ -260,7 +263,7 @@ def api_list_customers(
     if idle_days < 0:
         raise HTTPException(status_code=400, detail="未联系天数不能是负数")
     return {
-        "items": db.list_customers(user["id"], user["is_admin"], q, stage, sort, idle_days),
+        "items": db.list_customers(user["id"], user["is_admin"], q, stage, sort, idle_days, user.get("org_id", 1)),
         "stages": list(STAGES),
     }
 
@@ -291,8 +294,9 @@ def api_create_customer(req: CustomerRequest, request: Request):
         req.company.strip(),
         req.source.strip(),
         req.note.strip(),
+        org_id=user.get("org_id", 1),
     )
-    return db.get_customer(cid, user["id"], user["is_admin"])
+    return db.get_customer(cid, user["id"], user["is_admin"], user.get("org_id", 1))
 
 
 @app.delete("/api/customers/{customer_id}")
@@ -323,7 +327,7 @@ def api_patch_customer(customer_id: int, req: CustomerPatch, request: Request):
         if new_norm and new_norm != db.norm_phone(current["phone"]) and db.phone_taken(new_norm):
             raise HTTPException(status_code=409, detail="这个号码已经被建档过了。")
     db.update_customer(customer_id, user["id"], user["is_admin"], **fields)
-    return db.get_customer(customer_id, user["id"], user["is_admin"])
+    return db.get_customer(customer_id, user["id"], user["is_admin"], user.get("org_id", 1))
 
 
 @app.post("/api/customers/{customer_id}/transfer")
