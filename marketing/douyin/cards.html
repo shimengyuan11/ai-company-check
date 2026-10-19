@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Meridian · 抖音图文</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1080px; height: 1440px; overflow: hidden; background: #0a1120; }
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+    color: #e8eefc; -webkit-font-smoothing: antialiased;
+  }
+  .card {
+    width: 1080px; height: 1440px; padding: 92px 84px 84px;
+    display: none; flex-direction: column; position: relative;
+    background:
+      radial-gradient(120% 70% at 78% 6%, rgba(52, 120, 220, .28), transparent 62%),
+      radial-gradient(90% 60% at 8% 96%, rgba(34, 211, 238, .12), transparent 60%),
+      linear-gradient(160deg, #0b1424 0%, #0a1120 48%, #070d18 100%);
+  }
+  .card.on { display: flex; }
+
+  .top { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 66px; }
+  .brand { font-size: 26px; letter-spacing: .34em; color: #dbe9ff; font-weight: 700; }
+  .idx { font-size: 24px; letter-spacing: .22em; color: #56708f; }
+
+  h1 { font-size: 84px; line-height: 1.18; font-weight: 800; letter-spacing: -.02em; }
+  h1 .hl { color: #7cc4ff; }
+  .lead { font-size: 34px; line-height: 1.62; color: #9fb2cc; margin-top: 34px; }
+
+  ul { list-style: none; margin-top: 56px; display: flex; flex-direction: column; gap: 34px; }
+  li { display: flex; gap: 22px; font-size: 36px; line-height: 1.5; color: #dfe8f7; }
+  li b { color: #ffffff; font-weight: 700; }
+  li .dot {
+    flex: 0 0 14px; width: 14px; height: 14px; border-radius: 50%;
+    background: #6fb7ff; margin-top: 18px;
+    box-shadow: 0 0 16px 3px rgba(111, 183, 255, .55);
+  }
+  li .sub { display: block; font-size: 28px; color: #8ba0bd; margin-top: 10px; line-height: 1.55; }
+
+  .foot {
+    margin-top: auto; padding-top: 40px; border-top: 1px solid rgba(120, 160, 220, .16);
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 24px; color: #6a819f; letter-spacing: .04em;
+  }
+  .foot .repo { color: #7cc4ff; letter-spacing: .02em; }
+
+  /* 封面专用 */
+  .cover h1 { font-size: 96px; }
+  .cover .badge {
+    display: inline-flex; align-items: center; gap: 12px; align-self: flex-start;
+    padding: 14px 26px; border-radius: 999px; margin-bottom: 56px;
+    font-size: 26px; letter-spacing: .16em; color: #a9d4ff;
+    border: 1px solid rgba(124, 196, 255, .35); background: rgba(80, 150, 255, .1);
+  }
+  .cover .badge i { width: 10px; height: 10px; border-radius: 50%; background: #22d3ee; box-shadow: 0 0 14px 3px rgba(34, 211, 238, .7); }
+  .cover .metrics { display: flex; gap: 56px; margin-top: auto; padding-bottom: 40px; }
+  .cover .m { display: flex; flex-direction: column; gap: 8px; }
+  .cover .m b { font-size: 54px; color: #7cc4ff; font-weight: 800; letter-spacing: -.02em; }
+  .cover .m span { font-size: 24px; color: #7891ad; letter-spacing: .08em; }
+
+  .quote {
+    margin-top: 48px; padding: 34px 38px; border-radius: 22px;
+    background: rgba(124, 196, 255, .07); border: 1px solid rgba(124, 196, 255, .18);
+    font-size: 30px; line-height: 1.62; color: #c6d8ee;
+  }
+  .quote b { color: #ffffff; }
+  .code {
+    font-family: Consolas, "Cascadia Mono", monospace; font-size: 27px;
+    background: rgba(0, 0, 0, .38); border: 1px solid rgba(120, 160, 220, .2);
+    border-radius: 14px; padding: 22px 26px; color: #9fe0ff; line-height: 1.7;
+    white-space: pre; overflow: hidden;
+  }
+  .cols { display: flex; gap: 20px; margin-top: 44px; flex-wrap: wrap; }
+  .chip {
+    font-size: 26px; padding: 12px 22px; border-radius: 999px;
+    border: 1px solid rgba(120, 160, 220, .28); color: #a9bfd8; background: rgba(255, 255, 255, .03);
+  }
+</style>
+</head>
+<body>
+
+<!-- 01 封面 -->
+<section class="card cover on" data-i="1">
+  <div class="top"><span class="brand">MERIDIAN</span><span class="idx">01 / 09</span></div>
+  <span class="badge"><i></i>开源 · 可自己部署</span>
+  <h1>跨行一年<br>我用 AI 做了个<br><span class="hl">外贸客户工作台</span></h1>
+  <p class="lead">不是 Demo，是能天天用的东西：<br>管客户、记跟进、写话术、查公司底细。</p>
+  <div class="metrics">
+    <div class="m"><b>77</b><span>项回归测试</span></div>
+    <div class="m"><b>8</b><span>个功能模块</span></div>
+    <div class="m"><b>0</b><span>内置密钥</span></div>
+  </div>
+  <div class="foot"><span>仓库：shimengyuan11 / ai-company-check</span><span>MIT</span></div>
+</section>
+
+<!-- 02 痛点 -->
+<section class="card" data-i="2">
+  <div class="top"><span class="brand">MERIDIAN</span><span class="idx">02 / 09</span></div>
+  <h1>外贸业务的老毛病<br><span class="hl">不是不努力</span></h1>
+  <ul>
+    <li><span class="dot"></span><span><b>客户资料散在四个地方</b><span class="sub">微信、WhatsApp、Excel、脑子里。换个人接手，前面聊到哪一步全断</span></span></li>
+    <li><span class="dot"></span><span><b>收到陌生公司线索先犯难</b><span class="sub">查底细要 Google + LinkedIn + 海关数据翻一遍，20 到 30 分钟起</span></span></li>
+    <li><span class="dot"></span><span><b>该跟的人想不起来</b><span class="sub">报价发了三天没回音，全靠自己记；想主动跟一句，又怕太生硬</span></span></li>
+  </ul>
+  <div class="quote">这三件事都不难，难的是<b>每天重复</b>。重复的事情就该交给系统。</div>
+  <div class="foot"><span>所以我做了这个</span><span class="repo">↓ 下一页看它长什么样</span></div>
+</section>
+
+<!-- 03 背调 -->
+<section class="card" data-i="3">
+  <div class="top"><span class="brand">MERIDIAN</span><span class="idx">03 / 09</span></div>
+  <h1>① 输入公司名<br><span class="hl">出一份背调</span></h1>
+  <p class="lead">公司概况 / 主营 / 规模 / 风险点 / 建议，五段式，300 字以内。</p>
+  <ul>
+    <li><span class="dot"></span><span><b>宁说不知道，也不编</b><span class="sub">提示词硬性禁止编造员工数、营收、注册资本；不确定的一律写「未验证：需人工核实」</span></span></li>
+    <li><span class="dot"></span><span><b>事实和推断分开写</b><span class="sub">推断必须标明「推断」，让人知道哪句能拿去谈判</span></span></li>
+    <li><span class="dot"></span><span><b>历史按人隔离</b><span class="sub">别人看不到你查过哪些公司</span></span></li>
+  </ul>
+  <div class="quote">AI 在这里的角色是 <b>省掉 20 分钟初筛</b>，不是替你下结论。</div>
+  <div class="foot"><span>模型可自己接：OpenAI 兼容任意网关</span><span>不内置 key</span></div>
+</section>
+
+<!-- 04 客户工作台 -->
+<section class="card" data-i="4">
+  <div class="top"><span class="brand">MERIDIAN</span><span class="idx">04 / 09</span></div>
+  <h1>② 客户和跟进<br><span class="hl">一处管完</span></h1>
+  <ul>
+    <li><span class="dot"></span><span><b>建档只填 3 个字段</b><span class="sub">姓名 / 号码 / 国家，回车就存；写跟进只有 1 个输入框</span></span></li>
+    <li><span class="dot"></span><span><b>阶段六档 + 未联系天数</b><span class="sub">3 / 5 / 7 / 10 天没联系，一筛就出来该跟谁</span></span></li>
+    <li><span class="dot"></span><span><b>各管各的，但能移交</b><span class="sub">普通业务员只看自己名下；人走了把客户转给接手的，对方打开就知道聊到哪</span></span></li>
+    <li><span class="dot"></span><span><b>防撞单</b><span class="sub">同一个号被同事建过，建档直接被拦——但不会告诉你对方是谁</span></span></li>
+  </ul>
+  <div class="foot"><span>权限过滤写在 SQL 里</span><span class="repo">没有「忘了过滤」的函数</span></div>
+</section>
+
+<!-- 05 话术库 -->
+<section class="card" data-i="5">
+  <div class="top"><span class="brand">MERIDIAN</span><span class="idx">05 / 09</span></div>
+  <h1>③ 话术库 +<br><span class="hl">AI 草稿</span></h1>
+  <p class="lead">模板团队共享，标签能停用、能删、能合并。</p>
+  <ul>
+    <li><span class="dot"></span><span><b>生成时会喂最近 3 条跟进</b><span class="sub">「聊到哪一步」才是写话术最要紧的上下文，只给客户资料的话，写出来跟谁都能套</span></span></li>
+    <li><span class="dot"></span><span><b>界面回显依据</b><span class="sub">「依据：客户资料 + 3 条跟进 + 模板 X」，AI 就不是黑箱</span></span></li>
+    <li><span class="dot"></span><span><b>只出草稿，不代发</b><span class="sub">禁止编造价格 / 数量 / 交期，缺的写成问题去问对方</span></span></li>
+  </ul>
+  <div class="quote">有限额：每人每天次数上限 + 按月 token 额度，到顶就拦住，不让成本悄悄失控。</div>
+  <div class="foot"><span>生成记录跟客户权限走</span><span>看不到客户也看不到记录</span></div>
+</section>
+
+<!-- 06 多组织 -->
+<section class="card" data-i="6">
+  <div class="top"><span class="brand">MERIDIAN</span><span class="idx">06 / 09</span></div>
+  <h1>④ 一个实例<br><span class="hl">装下多家公司</span></h1>
+  <p class="lead">邀请码就是组织。第一家公司的管理员，也看不到第二家的客户。</p>
+  <ul>
+    <li><span class="dot"></span><span><b>跨组织一律当它不存在</b><span class="sub">不是提示「无权访问」，是返回 404——连「存在」都不泄露</span></span></li>
+    <li><span class="dot"></span><span><b>组织内部规则不变</b><span class="sub">本组织管理员仍能看到同事的客户，离职转接照旧</span></span></li>
+    <li><span class="dot"></span><span><b>移交下拉也不越界</b><span class="sub">不会把别公司的同事列出来</span></span></li>
+  </ul>
+  <div class="quote">为什么加这层：<b>没人愿意把客户名单放进一个「平台方能随时看」的系统</b>。</div>
+  <div class="foot"><span>默认单组织，单团队用完全无感</span><span class="repo">4 项隔离测试</span></div>
+</section>
+
+<!-- 07 工程细节 -->
+<section class="card" data-i="7">
+  <div class="top"><span class="brand">MERIDIAN</span><span class="idx">07 / 09</span></div>
+  <h1>给同行看的<br><span class="hl">工程细节</span></h1>
+  <ul>
+    <li><span class="dot"></span><span><b>77 项回归测试，跑在临时 schema 上</b><span class="sub">每次建一个一次性 schema，跑完 drop——不碰生产数据</span></span></li>
+    <li><span class="dot"></span><span><b>权限写进 SQL，不写在前端</b><span class="sub">前端藏按钮不算数；每个接口自己验身份，服务端 302 挡未登录</span></span></li>
+    <li><span class="dot"></span><span><b>性能是量出来的</b><span class="sub">gzip：63.8KB → 16.6KB；客户详情 4 个串行请求改并行，总耗时≈最慢那个</span></span></li>
+    <li><span class="dot"></span><span><b>密钥加密存、永不回传</b><span class="sub">模型 key 存数据库、加密、接口只返回名字和模型名</span></span></li>
+  </ul>
+  <div class="cols"><span class="chip">FastAPI</span><span class="chip">Postgres</span><span class="chip">原生 JS</span><span class="chip">three.js</span><span class="chip">Render</span></div>
+  <div class="foot"><span>没有 ORM，手写 SQL 更透明</span><span>时间统一存 UTC</span></div>
+</section>
+
+<!-- 08 怎么用 -->
+<section class="card" data-i="8">
+  <div class="top"><span class="brand">MERIDIAN</span><span class="idx">08 / 09</span></div>
+  <h1>想试？<span class="hl">三步跑起来</span></h1>
+  <ul>
+    <li><span class="dot"></span><span><b>代码在 GitHub</b><span class="sub">仓库名：shimengyuan11 / ai-company-check（MIT，随便改）</span></span></li>
+    <li><span class="dot"></span><span><b>需要一个 Postgres</b><span class="sub">Neon 免费层够用，把连接串填进 .env</span></span></li>
+    <li><span class="dot"></span><span><b>模型 key 自己配</b><span class="sub">不内置任何密钥：登录后到「智能体」页填自己的 Base URL / 模型 / Key</span></span></li>
+  </ul>
+  <div class="code">python -m venv .venv
+.venv/Scripts/python.exe -m pip install -r requirements.txt
+.venv/Scripts/python.exe -m uvicorn main:app --port 8000</div>
+  <div class="foot"><span>Windows 下还有一键「启动.bat」</span><span>记得先填 SIGNUP_CODE</span></div>
+</section>
+
+<!-- 09 还能改什么 -->
+<section class="card" data-i="9">
+  <div class="top"><span class="brand">MERIDIAN</span><span class="idx">09 / 09</span></div>
+  <h1>它还很粗糙<br><span class="hl">缺口我列出来</span></h1>
+  <ul>
+    <li><span class="dot"></span><span><b>WhatsApp 直接接入</b><span class="sub">方案已写进 docs：用官方 Cloud API，不用逆向库；卡在 24 小时窗口与模板审核</span></span></li>
+    <li><span class="dot"></span><span><b>模板 / 产品 / 选项还没按组织隔离</b><span class="sub">多家公司共用一个实例时，这些「团队词典」会互相看到</span></span></li>
+    <li><span class="dot"></span><span><b>没有移动端，没有 CI</b><span class="sub">窄屏只是隐藏了装饰元素；测试靠手动跑，还没接流水线</span></span></li>
+    <li><span class="dot"></span><span><b>开通第二个组织要手工插一行 SQL</b><span class="sub">没有平台方管理界面</span></span></li>
+  </ul>
+  <div class="quote">欢迎拍砖、提 Issue、直接 PR。<b>跨行做的东西，最缺的就是内行的一句「这里不对」。</b></div>
+  <div class="foot"><span>Meridian · 外贸客户工作台</span><span class="repo">MIT 开源</span></div>
+</section>
+
+<script>
+  const i = new URLSearchParams(location.search).get('i') || '1';
+  document.querySelectorAll('.card').forEach((el) => {
+    el.classList.toggle('on', el.dataset.i === i);
+  });
+
+  /* 排版自检：把内容高度写进 title，供截图脚本判断有没有溢出卡片。
+     为什么要有这一步：这些卡片是给人看的成品，文字一旦超出 1440 就会在
+     抖音里被裁掉，而截出来的 PNG 肉眼在终端里看不到。 */
+  window.addEventListener('load', () => {
+    const el = document.querySelector('.card.on');
+    if (!el) return;
+    const foot = el.querySelector('.foot');
+    const items = el.querySelectorAll('li, .quote, .code');
+    const last = items[items.length - 1];
+    const gap = last && foot
+      ? Math.round(foot.getBoundingClientRect().top - last.getBoundingClientRect().bottom)
+      : 0;
+    document.title = 'gap:' + gap + ' footBottom:' + Math.round(foot.getBoundingClientRect().bottom);
+  });
+</script>
+</body>
+</html>
