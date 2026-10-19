@@ -8,6 +8,7 @@ import httpx
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -32,6 +33,11 @@ app.add_middleware(
     same_site="lax",  # 跨站请求不带 cookie，够挡掉大部分 CSRF
     max_age=60 * 60 * 24 * 14,
 )
+
+# 响应压缩：workspace.js 有 63KB、style.css 40KB，跨洋传输时没压缩是纯亏。
+# 线上实测单个静态请求 0.7~1.2s，压缩后传输量降到 1/3 左右。
+# minimum_size 压小响应不值得（CPU 换不到时间），500 字节以上才压。
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 init_db()  # 启动时建表
 

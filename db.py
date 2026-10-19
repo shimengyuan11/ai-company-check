@@ -312,6 +312,8 @@ def init_db():
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_customers_phone_norm ON customers(phone_norm)"
         )
+        # 背调历史按人过滤（2026-10-18 加的归属列）
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_analyses_user ON analyses(user_id)")
 
         # —— 老库升级：产品自定义属性（材质 / MOQ / 交期…），存 JSON 文本 ——
         conn.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS attrs TEXT")

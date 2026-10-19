@@ -323,11 +323,16 @@ async function openCustomer(id) {
     $("genOut").hidden = true;
     setText($("genMsg"), "");
     loadGenTemplates();
-    await loadGenerations(id);
+    /* 四份数据互不依赖，必须并行发。原来是一个 await 接一个 await，
+       每个都要跨一次太平洋（线上单请求 0.7~1.2s），串起来点开一个客户要等 2~3 秒。
+       并行之后总耗时 ≈ 最慢的那一个。 */
+    await Promise.all([
+      loadGenerations(id),
+      loadFollowups(id),
+      loadAttachments(id),
+      loadTransferOptions(),
+    ]);
     $("fuContent").focus();
-    await loadFollowups(id);
-    await loadAttachments(id);
-    await loadTransferOptions();
     setText($("fileMsg"), "");
     $("fileInput").value = "";
     document.querySelectorAll(".cust-item").forEach((el) => {
