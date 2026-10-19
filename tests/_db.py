@@ -79,6 +79,31 @@ def ensure_admin():
     return ADMIN["user"]
 
 
+PROVIDER = {}
+
+
+def ensure_provider():
+    """造一个可用的智能体渠道（幂等），返回它的 id。
+
+    开源版不再有服务器默认 key：每一次生成都必须显式带一个渠道，
+    所以测试也得先有一个。渠道是团队共享的（像产品目录），建一个就够所有用例用。
+    """
+    if "id" not in PROVIDER:
+        ensure_admin()
+        r = ADMIN["client"].post(
+            "/api/providers",
+            json={
+                "name": "test_provider_" + uuid.uuid4().hex[:6],
+                "base_url": "https://api.example.com/v1",
+                "model": "test-model",
+                "api_key": "sk-test-not-real",
+            },
+        )
+        assert r.status_code == 200, r.text
+        PROVIDER["id"] = r.json()["id"]
+    return PROVIDER["id"]
+
+
 TEST_URL = f"{DIRECT_URL}{_sep}options=-c%20search_path%3D{SCHEMA}"
 
 

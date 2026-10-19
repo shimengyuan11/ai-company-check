@@ -19,6 +19,7 @@ LIMIT = 5  # 与 tests/_db.py 里设的 LLM_DAILY_LIMIT 保持一致
 
 def setUpModule():
     ensure_admin()
+    _db.ensure_provider()  # 开源版没有服务器默认 key：所有生成都要显式带渠道
 
 
 def _phone():
@@ -91,6 +92,46 @@ class GenerateRuleTest(unittest.TestCase):
         passed = args.args[3] if len(args.args) > 3 else args.kwargs.get("followups")
         self.assertIsNotNone(passed, "跟进记录要作为参数传进 generate_pitch")
         self.assertLessEqual(len(passed), 3, "最多带 3 条，别把整个历史都塞进去")
+
+
+    @patch("main.generate_pitch", return_value={"text": "草稿正文", "tokens_in": 10, "tokens_out": 20, "model": "test-model"})
+    def test_no_provider_is_blocked(self, _mock):
+        """一个渠道都没配时必须明确让人去配，而不是偷偷用部署者的 key。"""
+        with patch("main.db.list_providers", return_value=[]):
+            r = self._gen()
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("智能体", r.json()["detail"])
+
+
+class AnalyzeRequiresOwnProviderTest(unittest.TestCase):
+    """AI 背调同样不再借用部署者的额度：必须登录、必须有渠道，历史按人隔离。"""
+
+    def test_anonymous_cannot_analyze(self):
+        r = _client().post("/analyze", json={"company": "比亚迪"})
+        self.assertEqual(r.status_code, 401, "匿名没有可用渠道，应当直接要求登录")
+
+    def test_logged_in_without_provider_gets_hint(self):
+        c = _client()
+        _db.register(c, "ana_a")
+        with patch("main.db.list_providers", return_value=[]):
+            r = c.post("/analyze", json={"company": "比亚迪"})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("智能体", r.json()["detail"], "要引导去配渠道，而不是报一个看不懂的错")
+
+    @patch("main.analyze_company", return_value="背调正文")
+    def test_history_is_scoped_to_owner(self, _mock):
+        _db.ensure_provider()
+        a = _client()
+        _db.register(a, "hist_a")
+        r = a.post("/analyze", json={"company": "甲公司"})
+        self.assertEqual(r.status_code, 200, r.text)
+        rid = r.json()["id"]
+
+        b = _client()
+        _db.register(b, "hist_b")
+        listed = [x["id"] for x in b.get("/history").json()["items"]]
+        self.assertNotIn(rid, listed, "别人的背调不该出现在我的列表里")
+        self.assertIn("error", b.get(f"/history/{rid}").json(), "直取别人那条也要拿不到")
 
 
 if __name__ == "__main__":

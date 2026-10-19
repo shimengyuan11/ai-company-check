@@ -72,6 +72,7 @@ def init_db():
                 extra       TEXT,
                 analysis    TEXT NOT NULL,
                 model       TEXT,
+                user_id     INTEGER,
                 created_at  TEXT
             )
             """
@@ -122,6 +123,10 @@ def init_db():
             )
             """
         )
+        # 老库迁移：背调记录原来没有归属人（全局共享），现在补上这一列。
+        # 用 IF NOT EXISTS 是幂等的，重复调用 init_db 不会报错。
+        conn.execute("ALTER TABLE analyses ADD COLUMN IF NOT EXISTS user_id INTEGER")
+
         # 选项库：国家 / 来源 这类字段，谁填过一次，以后大家就能直接下拉选。
         # 故意**不分归属**——它不是客户隐私，是团队共同积累的"词典"，
         # 各存各的就没意义了（每个人都要重新攒一遍）。
@@ -336,34 +341,44 @@ def init_db():
 # ===================== V1：背调 =====================
 
 
-def save_analysis(company, extra, analysis, model):
-    """存一条背调，返回它的 id。"""
+def save_analysis(company, extra, analysis, model, user_id=None):
+    """存一条背调，返回它的 id。
+
+    user_id 是归属人——背调历史按人隔离（老的 NULL 行只有管理员看得到）。
+    """
     with pool.connection() as conn:
         row = conn.execute(
-            "INSERT INTO analyses (company, extra, analysis, model, created_at)"
-            " VALUES (%s, %s, %s, %s, %s)"
+            "INSERT INTO analyses (company, extra, analysis, model, user_id, created_at)"
+            " VALUES (%s, %s, %s, %s, %s, %s)"
             " RETURNING id",
-            (company, extra, analysis, model, _now()),
+            (company, extra, analysis, model, user_id, _now()),
         ).fetchone()
     return row["id"]
 
 
-def list_history(limit=10):
-    """读最近 limit 条（不含正文，列表页用不上）。"""
+def list_history(limit=10, user_id=None, is_admin=False):
+    """读最近 limit 条（不含正文，列表页用不上）。管理员能看到全部。"""
+    sql = "SELECT id, company, created_at FROM analyses"
+    params = []
+    if user_id is not None and not is_admin:
+        sql += " WHERE user_id = %s"
+        params.append(user_id)
+    sql += " ORDER BY id DESC LIMIT %s"
+    params.append(limit)
     with pool.connection() as conn:
-        rows = conn.execute(
-            "SELECT id, company, created_at FROM analyses ORDER BY id DESC LIMIT %s",
-            (limit,),
-        ).fetchall()
+        rows = conn.execute(sql, params).fetchall()
     return rows
 
 
-def get_analysis(record_id):
-    """读某一条的完整内容。"""
+def get_analysis(record_id, user_id=None, is_admin=False):
+    """读某一条的完整内容。不是本人（也不是管理员）就当它不存在。"""
+    sql = "SELECT * FROM analyses WHERE id = %s"
+    params = [record_id]
+    if user_id is not None and not is_admin:
+        sql += " AND user_id = %s"
+        params.append(user_id)
     with pool.connection() as conn:
-        row = conn.execute(
-            "SELECT * FROM analyses WHERE id = %s", (record_id,)
-        ).fetchone()
+        row = conn.execute(sql, params).fetchone()
     return row
 
 

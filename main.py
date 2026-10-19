@@ -14,7 +14,7 @@ from starlette.middleware.sessions import SessionMiddleware
 import auth
 import db
 from db import get_analysis, init_db, list_history, save_analysis
-from llm import MODEL, PITCH_MODEL, analyze_company, generate_pitch
+from llm import LLMNotConfigured, NOT_CONFIGURED_HINT, analyze_company, generate_pitch
 
 BASE_DIR = Path(__file__).parent  # 项目根目录；拼路径都用它
 
@@ -46,29 +46,62 @@ class AnalyzeRequest(BaseModel):
 
     company: str
     extra: str = ""
+    provider_id: int | None = None  # 用哪个智能体；不选就用第一个启用的
+
+
+def _resolve_provider(provider_id=None):
+    """选出这次调用用哪个智能体。
+
+    渠道存在数据库里、由使用者自己配置——**不回落到部署者的环境变量 key**。
+    渠道是团队共享的（像产品目录一样），所以「自己配置」指的是这台部署自己配。
+    """
+    if provider_id:
+        provider = db.get_provider(provider_id, with_key=True)
+        if provider is None or not provider["is_active"]:
+            raise HTTPException(status_code=404, detail="这个智能体不存在或已停用")
+        if not provider["api_key"]:
+            raise HTTPException(status_code=400, detail="这个智能体还没配 key")
+        return provider
+    active = db.list_providers()
+    if not active:
+        raise HTTPException(status_code=400, detail=NOT_CONFIGURED_HINT)
+    return db.get_provider(active[0]["id"], with_key=True)
 
 
 @app.post("/analyze")
-def analyze(req: AnalyzeRequest):
+def analyze(req: AnalyzeRequest, request: Request):
+    """AI 背调。要登录，并且用这台部署里配好的智能体渠道。
+
+    为什么必须登录：生成一次就烧一次额度，谁用谁付。
+    开源版不再内置任何默认 key，所以匿名访客根本没有可用渠道。
+    """
+    user = auth.require_user(request)
+    provider = _resolve_provider(req.provider_id)
     try:
-        text = analyze_company(req.company, req.extra)
+        text = analyze_company(req.company, req.extra, provider)
+    except LLMNotConfigured as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except httpx.HTTPStatusError as e:
         return {
             "error": f"调用 LLM 失败：HTTP {e.response.status_code}",
             "detail": e.response.text[:300],
         }
-    record_id = save_analysis(req.company, req.extra, text, MODEL)
+    record_id = save_analysis(req.company, req.extra, text, provider["model"], user["id"])
     return {"id": record_id, "company": req.company, "analysis": text}
 
 
 @app.get("/history")
-def history(limit: int = 10):
-    return {"items": list_history(limit)}
+def history(request: Request, limit: int = 10):
+    """只列自己的背调记录；管理员可以看全部。"""
+    user = auth.require_user(request)
+    return {"items": list_history(limit, user["id"], user["is_admin"])}
 
 
 @app.get("/history/{record_id}")
-def history_detail(record_id: int):
-    row = get_analysis(record_id)
+def history_detail(record_id: int, request: Request):
+    """只看自己那条；管理员可以看全部。"""
+    user = auth.require_user(request)
+    row = get_analysis(record_id, user["id"], user["is_admin"])
     if row is None:
         return {"error": f"没有 id={record_id} 的记录"}
     return row
@@ -654,14 +687,8 @@ def api_generate(customer_id: int, req: GenerateRequest, request: Request):
                 detail=f"本月额度用完了（已用 {used_tokens} / {limit} tokens），找管理员加额度。",
             )
 
-    # 选哪个智能体——不选就走服务器默认那套
-    provider = None
-    if req.provider_id:
-        provider = db.get_provider(req.provider_id, with_key=True)
-        if provider is None or not provider["is_active"]:
-            raise HTTPException(status_code=404, detail="这个智能体不存在或已停用")
-        if not provider["api_key"]:
-            raise HTTPException(status_code=400, detail="这个智能体还没配 key")
+    # 选哪个智能体——没指定就用第一个启用的；一个都没配就直接告诉人
+    provider = _resolve_provider(req.provider_id)
 
     # 最近的跟进记录也喂进去——「聊到哪一步了」是写话术最关键的信息，
     # 只给客户资料的话，生成出来的东西跟谁都能套，业务还得自己改一遍。

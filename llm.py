@@ -1,27 +1,68 @@
-import os
+"""LLM 调用层。
+
+开源版的一条硬约定：**这里不内置任何默认渠道，也不读部署者自己的 key**。
+每次调用都必须显式带一个「智能体」（`ai_providers` 表里的一行：base_url + model + api_key），
+由当前登录用户自己配置——谁用谁的额度，账才清楚。
+
+.env 里仍可放 DATABASE_URL / SECRET_KEY 这类部署配置，但 `LLM_*` 环境变量已不再被读取。
+这样别人 clone 下来、或者拿安装包试用时，不会有人悄悄花掉部署者的钱。
+"""
 
 import httpx
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv()  # 保留：本地把 DATABASE_URL 之类放 .env 更方便
 
-BASE_URL = os.environ.get("LLM_BASE_URL", "")
-API_KEY = os.environ.get("LLM_API_KEY", "")
-MODEL = os.environ.get("LLM_MODEL", "")
 
-missing = [name for name, value in [
-    ("LLM_BASE_URL", BASE_URL),
-    ("LLM_API_KEY", API_KEY),
-    ("LLM_MODEL", MODEL),
-] if not value]
-if missing:
-    raise RuntimeError("缺少配置：" + "、".join(missing) + "（请看项目目录下的 .env 文件）")
+class LLMNotConfigured(RuntimeError):
+    """没有可用的智能体渠道。
 
-# 话术生成可以**单独指一个模型**（比如更便宜的 / 免费渠道），不填就沿用上面那套。
-# 拆开的原因：背调是一次性重活，话术是天天用的轻活，两者的性价比考虑不一样。
-PITCH_BASE_URL = os.environ.get("PITCH_LLM_BASE_URL") or BASE_URL
-PITCH_API_KEY = os.environ.get("PITCH_LLM_API_KEY") or API_KEY
-PITCH_MODEL = os.environ.get("PITCH_LLM_MODEL") or MODEL
+    这是一种正常的「还没配置」，不是异常——调用方应该把它翻译成一句
+    明确的人话，引导使用者去配，而不是静默回落到别人的 key。
+    """
+
+
+NOT_CONFIGURED_HINT = (
+    "还没有可用的智能体：请到「智能体」页点「添加」，"
+    "填上名称 / Base URL / 模型名 / API Key，然后回来重试。"
+)
+
+
+def _pick(provider, field):
+    """取 provider 的一个必填字段；缺了就抛「去配置」。"""
+    value = (provider or {}).get(field)
+    if not value:
+        raise LLMNotConfigured(NOT_CONFIGURED_HINT)
+    return value
+
+
+def _chat(provider, system_prompt, user_content, timeout=60.0):
+    """发一次 chat/completions。
+
+    trust_env=False：不吃系统代理。踩过的坑——本机代理指向一个不可用地址时，
+    curl 能通、程序不通，判据是「经该代理访问目标是否成功」。
+    """
+    base_url = str(_pick(provider, "base_url")).rstrip("/")
+    api_key = _pick(provider, "api_key")
+    model = _pick(provider, "model")
+
+    response = httpx.post(
+        f"{base_url}/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}"},
+        json={
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content},
+            ],
+            "stream": False,
+        },
+        timeout=timeout,
+        trust_env=False,
+    )
+    response.raise_for_status()
+    return response.json()
+
 
 SYSTEM_PROMPT = """你是给外贸 / BD / 销售用的公司背景调查助手。
 用户会给你一个公司名，可能附带补充信息。请输出一份简明背调报告。
@@ -38,30 +79,18 @@ SYSTEM_PROMPT = """你是给外贸 / BD / 销售用的公司背景调查助手�
 """
 
 
-def analyze_company(company: str, extra: str = "") -> str:
-    """调一次 LLM，返回背调分析的正文。"""
+def analyze_company(company: str, extra: str = "", provider=None) -> str:
+    """调一次 LLM，返回背调分析的正文。
+
+    provider 必传（`{"base_url","api_key","model"}`）——不再有服务器默认渠道。
+    """
     user_content = f"公司名：{company}"
     if extra:
         user_content += f"\n补充信息：{extra}"
 
-    response = httpx.post(
-        f"{BASE_URL}/chat/completions",
-        headers={"Authorization": f"Bearer {API_KEY}"},
-        json={
-            "model": MODEL,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_content},
-            ],
-            "stream": False,
-        },
-        timeout=60.0,
-        trust_env=False,
-    )
-    response.raise_for_status()
+    data = _chat(provider, SYSTEM_PROMPT, user_content)
+    return (data["choices"][0]["message"]["content"] or "").strip()
 
-    data = response.json()
-    return data["choices"][0]["message"]["content"]
 
 # ===================== 第 3 期：按客户生成话术 =====================
 
@@ -91,11 +120,9 @@ def generate_pitch(
     customer 传 db.get_customer 那一行即可（姓名 / 公司 / 国家 / 阶段 / 备注 / 来源）。
     followups 传最近的几条跟进（每条至少含 content / created_at）——「聊到哪了」
     才是写话术最要紧的上下文，缺了它生成的东西只能套模板。
-    provider 传 `{"base_url","api_key","model"}` 就用那个渠道；不传沿用 PITCH_LLM_* 配置。
+    provider 必传：用哪个渠道写在请求里，不再回落到服务器配置。
     """
-    base_url = (provider or {}).get("base_url") or PITCH_BASE_URL
-    api_key = (provider or {}).get("api_key") or PITCH_API_KEY
-    model = (provider or {}).get("model") or PITCH_MODEL
+    model = _pick(provider, "model")
 
     bits = []
     for label, key in [
@@ -126,23 +153,7 @@ def generate_pitch(
     if request.strip():
         user_content += "\n\n这次想达成：\n" + request.strip()
 
-    response = httpx.post(
-        f"{base_url}/chat/completions",
-        headers={"Authorization": f"Bearer {api_key}"},
-        json={
-            "model": model,
-            "messages": [
-                {"role": "system", "content": PITCH_PROMPT},
-                {"role": "user", "content": user_content},
-            ],
-            "stream": False,
-        },
-        timeout=60.0,
-        trust_env=False,
-    )
-    response.raise_for_status()
-
-    data = response.json()
+    data = _chat(provider, PITCH_PROMPT, user_content)
     usage = data.get("usage") or {}
     return {
         "text": (data["choices"][0]["message"]["content"] or "").strip(),
